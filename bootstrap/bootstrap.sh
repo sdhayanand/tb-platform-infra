@@ -29,11 +29,14 @@ PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(proje
 echo "==> Project number: ${PROJECT_NUMBER}"
 
 echo "==> [1/5] Enabling APIs (this takes 1-3 minutes)"
+# gcloud enables at most 20 services per call, so the list is split in two batches.
 gcloud services enable \
   serviceusage.googleapis.com cloudresourcemanager.googleapis.com iam.googleapis.com \
-  iamcredentials.googleapis.com sts.googleapis.com \
-  compute.googleapis.com container.googleapis.com run.googleapis.com \
-  pubsub.googleapis.com dataflow.googleapis.com bigquery.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com compute.googleapis.com \
+  container.googleapis.com run.googleapis.com pubsub.googleapis.com dataflow.googleapis.com \
+  bigquery.googleapis.com \
+  --project "${PROJECT_ID}"
+gcloud services enable \
   bigquerystorage.googleapis.com sqladmin.googleapis.com servicenetworking.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com cloudbuild.googleapis.com \
   cloudscheduler.googleapis.com storage.googleapis.com logging.googleapis.com \

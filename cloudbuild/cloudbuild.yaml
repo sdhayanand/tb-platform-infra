@@ -10,6 +10,7 @@ substitutions:
   _MODULE: order-intake-api
   _NAMESPACE: otd
   _CLUSTER: tb-otd-autopilot
+  _GKE_LOCATION: us-east1
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -42,7 +43,7 @@ steps:
     args:
       - -c
       - |
-        gcloud container clusters get-credentials ${_CLUSTER} --region ${_REGION} --project $PROJECT_ID
+        gcloud container clusters get-credentials ${_CLUSTER} --region ${_GKE_LOCATION} --project $PROJECT_ID
         export PROJECT_ID=$PROJECT_ID IMAGE_TAG=$SHORT_SHA
         kubectl kustomize ${_MODULE}/deploy/k8s/overlays/gcp | envsubst '$${PROJECT_ID} $${IMAGE_TAG}' | kubectl apply -n ${_NAMESPACE} -f -
         kubectl -n ${_NAMESPACE} rollout status deployment/${_MODULE} --timeout=300s

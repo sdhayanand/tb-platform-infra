@@ -127,7 +127,7 @@ jobs:
         with:
           install_components: 'gke-gcloud-auth-plugin,kubectl'
       - name: cluster credentials
-        run: gcloud container clusters get-credentials tb-otd-autopilot --region "$REGION" --project "$PROJECT_ID"
+        run: gcloud container clusters get-credentials tb-otd-autopilot --region "${{ vars.GKE_LOCATION || 'us-east1' }}" --project "$PROJECT_ID"
       - name: namespaces
         run: kubectl apply -k k8s/namespaces
       - name: runtime secrets from Secret Manager

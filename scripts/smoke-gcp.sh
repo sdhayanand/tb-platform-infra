@@ -3,7 +3,7 @@
 #   PROJECT_ID=crosscutdata-509514 scripts/smoke-gcp.sh
 set -euo pipefail
 PROJECT_ID="${PROJECT_ID:?}"; REGION="${REGION:-us-central1}"
-gcloud container clusters get-credentials tb-otd-autopilot --region "$REGION" --project "$PROJECT_ID" >/dev/null
+gcloud container clusters get-credentials tb-otd-autopilot --region "${GKE_LOCATION:-us-east1}" --project "$PROJECT_ID" >/dev/null
 
 API_IP=$(kubectl -n otd get svc order-intake-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 [ -n "$API_IP" ] || { echo "order-intake-api has no external IP yet"; exit 1; }

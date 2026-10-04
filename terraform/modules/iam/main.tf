@@ -84,29 +84,11 @@ resource "google_service_account_iam_member" "scheduler_acts_as_dataflow" {
   member             = "serviceAccount:${local.email["tb-scheduler"]}"
 }
 
-# ---------------------------------------------------------------------------
-# Workload Identity: Kubernetes SA (namespace/name) -> Google SA
-# ---------------------------------------------------------------------------
-locals {
-  workload_identity = {
-    "otd/order-intake-api"       = "order-intake-api"
-    "otd/inventory-service"      = "inventory-service"
-    "otd/jms-to-pubsub-bridge"   = "tb-migration-bridge"
-    "otd/pubsub-to-jms-bridge"   = "tb-migration-bridge"
-    "legacy/ems-broker"          = "tb-legacy-sim"
-    "legacy/legacy-oms-soap"     = "tb-legacy-sim"
-    "legacy/erp-mq-consumer"     = "tb-legacy-sim"
-    "legacy/store-pos-simulator" = "tb-legacy-sim"
-  }
-}
-
-resource "google_service_account_iam_member" "workload_identity" {
-  for_each           = local.workload_identity
-  service_account_id = google_service_account.sa[each.value].name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[${each.key}]"
-}
-
 output "service_account_emails" {
   value = local.email
+}
+
+output "service_account_names" {
+  description = "Fully-qualified SA resource names (projects/.../serviceAccounts/...), for IAM bindings made outside the module"
+  value       = { for k, sa in google_service_account.sa : k => sa.name }
 }

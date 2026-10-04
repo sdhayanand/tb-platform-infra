@@ -9,6 +9,12 @@ variable "region" {
   default     = "us-central1"
 }
 
+variable "gke_location" {
+  description = "Region for the GKE Autopilot cluster. Separate from var.region because Autopilot capacity can run out in one region (us-central1 stockout on 2026-10-04)."
+  type        = string
+  default     = "us-east1"
+}
+
 variable "env" {
   description = "Environment name (dev|stage|prod); used in labels and names"
   type        = string

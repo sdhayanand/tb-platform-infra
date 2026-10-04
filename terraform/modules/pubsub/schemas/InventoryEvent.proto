@@ -1,9 +1,18 @@
 syntax = "proto3";
 
 // Pub/Sub schema for topic inventory-v1 (JSON encoding). Mirrors ARCHITECTURE.md §3.2.
+// One top-level message per Pub/Sub schema, so InventoryLine is nested.
 message InventoryEvent {
+  message InventoryLine {
+    int32 line_number = 1;
+    string sku = 2;
+    int32 quantity = 3;
+    string status = 4;            // RESERVED | BACKORDERED | RELEASED
+    string location_id = 5;
+  }
+
   string event_id = 1;
-  string event_type = 2;        // INVENTORY_RESERVED | INVENTORY_BACKORDERED | INVENTORY_RELEASED
+  string event_type = 2;          // INVENTORY_RESERVED | INVENTORY_BACKORDERED | INVENTORY_RELEASED
   string event_time = 3;
   string schema_version = 4;
   string source = 5;
@@ -11,12 +20,4 @@ message InventoryEvent {
   string order_id = 7;
   string store_id = 8;
   repeated InventoryLine lines = 9;
-}
-
-message InventoryLine {
-  int32 line_number = 1;
-  string sku = 2;
-  int32 quantity = 3;
-  string status = 4;            // RESERVED | BACKORDERED | RELEASED
-  string location_id = 5;
 }

@@ -1,5 +1,6 @@
 project_id       = "crosscutdata-509514"
 region           = "us-central1"
+gke_location     = "us-east1" # Autopilot stockout in us-central1 on 2026-10-04
 env              = "dev"
 github_owner     = "sdhayanand"
 alert_email      = "" # set to get e-mail alerts, e.g. "you@example.com"

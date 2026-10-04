@@ -1,65 +1,66 @@
 syntax = "proto3";
 
 // Pub/Sub schema for topic orders-v1 (JSON encoding). Mirrors ARCHITECTURE.md §3.1.
-// Pub/Sub schemas cannot import other files, so timestamps are RFC-3339 strings and
-// enums are strings (validated by the services and the Dataflow pipeline).
+// Pub/Sub allows exactly ONE top-level message per schema, so the sub-types are nested.
+// Schemas cannot import other files, so timestamps are RFC-3339 strings and enums are
+// strings (validated by the services and the Dataflow pipeline).
 
 message OrderEvent {
+  message Alteration {
+    string type = 1;              // HEM | SLEEVE | WAIST | TAPER | OTHER
+    double measurement_inches = 2;
+    string tailor_shop_id = 3;
+    string notes = 4;
+  }
+
+  message OrderLine {
+    int32 line_number = 1;
+    string sku = 2;
+    int32 quantity = 3;
+    double unit_price = 4;
+    string fulfillment_type = 5;  // STORE_PICKUP | SHIP_TO_HOME | ALTERATION
+    Alteration alteration = 6;
+  }
+
+  message Rental {
+    string event_id = 1;          // wedding / prom event reference
+    string event_date = 2;        // yyyy-MM-dd
+    string return_due_date = 3;   // yyyy-MM-dd
+    string group_id = 4;          // wedding-party group linkage
+  }
+
+  message Address {
+    string name = 1;
+    string line1 = 2;
+    string line2 = 3;
+    string city = 4;
+    string state = 5;
+    string postal_code = 6;
+    string country = 7;
+  }
+
+  message Order {
+    string order_id = 1;
+    string order_type = 2;        // RETAIL | TAILORED | CUSTOM | RENTAL | ECOM
+    string channel = 3;           // STORE | WEB | CALL_CENTER
+    string store_id = 4;
+    string customer_id = 5;
+    string ordered_at = 6;
+    string promised_date = 7;     // yyyy-MM-dd
+    string currency = 8;
+    double total_amount = 9;
+    repeated OrderLine lines = 10;
+    Rental rental = 11;
+    Address ship_to = 12;
+    string status = 13;
+  }
+
   string event_id = 1;
-  string event_type = 2;        // ORDER_CREATED | ORDER_UPDATED | ORDER_CANCELLED
-  string event_time = 3;        // RFC-3339
+  string event_type = 2;          // ORDER_CREATED | ORDER_UPDATED | ORDER_CANCELLED
+  string event_time = 3;          // RFC-3339
   string schema_version = 4;
-  string source = 5;            // ORDER_INTAKE_API | LEGACY_SOAP_ADAPTER | TIBCO_EMS_BRIDGE | REPLAY
+  string source = 5;              // ORDER_INTAKE_API | LEGACY_SOAP_ADAPTER | TIBCO_EMS_BRIDGE | REPLAY
   string correlation_id = 6;
   string legacy_message_id = 7;
   Order order = 8;
-}
-
-message Order {
-  string order_id = 1;
-  string order_type = 2;        // RETAIL | TAILORED | CUSTOM | RENTAL | ECOM
-  string channel = 3;           // STORE | WEB | PHONE
-  string store_id = 4;
-  string customer_id = 5;
-  string ordered_at = 6;
-  string promised_date = 7;     // yyyy-MM-dd
-  string currency = 8;
-  double total_amount = 9;
-  repeated OrderLine lines = 10;
-  Rental rental = 11;
-  Address ship_to = 12;
-  string status = 13;
-}
-
-message OrderLine {
-  int32 line_number = 1;
-  string sku = 2;
-  int32 quantity = 3;
-  double unit_price = 4;
-  string fulfillment_type = 5;  // STORE_PICKUP | SHIP_TO_HOME | ALTERATION
-  Alteration alteration = 6;
-}
-
-message Alteration {
-  string type = 1;              // HEM | SLEEVE | WAIST | TAPER | OTHER
-  double measurement_inches = 2;
-  string tailor_shop_id = 3;
-  string notes = 4;
-}
-
-message Rental {
-  string event_id = 1;          // wedding / prom event reference
-  string event_date = 2;        // yyyy-MM-dd
-  string return_due_date = 3;   // yyyy-MM-dd
-  string group_id = 4;          // wedding-party group linkage
-}
-
-message Address {
-  string name = 1;
-  string line1 = 2;
-  string line2 = 3;
-  string city = 4;
-  string state = 5;
-  string postal_code = 6;
-  string country = 7;
 }

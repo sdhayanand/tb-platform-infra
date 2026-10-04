@@ -85,9 +85,32 @@ module "gke" {
   count           = var.enable_gke ? 1 : 0
   source          = "./modules/gke"
   project_id      = var.project_id
-  region          = var.region
+  region          = var.gke_location
   release_channel = var.gke_release_channel
   labels          = local.labels
+}
+
+# Workload Identity: Kubernetes SA (namespace/name) -> Google SA. The identity pool
+# <project>.svc.id.goog only exists once the first GKE cluster with WI is created, hence depends_on.
+locals {
+  workload_identity = {
+    "otd/order-intake-api"       = "order-intake-api"
+    "otd/inventory-service"      = "inventory-service"
+    "otd/jms-to-pubsub-bridge"   = "tb-migration-bridge"
+    "otd/pubsub-to-jms-bridge"   = "tb-migration-bridge"
+    "legacy/ems-broker"          = "tb-legacy-sim"
+    "legacy/legacy-oms-soap"     = "tb-legacy-sim"
+    "legacy/erp-mq-consumer"     = "tb-legacy-sim"
+    "legacy/store-pos-simulator" = "tb-legacy-sim"
+  }
+}
+
+resource "google_service_account_iam_member" "workload_identity" {
+  for_each           = var.enable_gke ? local.workload_identity : {}
+  service_account_id = module.iam.service_account_names[each.value]
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${each.key}]"
+  depends_on         = [module.gke]
 }
 
 module "scheduler" {

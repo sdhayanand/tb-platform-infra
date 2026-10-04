@@ -26,6 +26,10 @@ output "bigquery_dataset" {
   value = module.bigquery.dataset_id
 }
 
+output "gke_location" {
+  value = var.gke_location
+}
+
 output "gke_cluster_name" {
   value = var.enable_gke ? module.gke[0].cluster_name : null
 }

@@ -6,6 +6,10 @@ variable "message_retention" { type = string }
 variable "bigquery_dataset" { type = string }
 variable "bigquery_raw_table" { type = string }
 variable "notification_push_url" { type = string }
+variable "notification_push_audience" {
+  description = "OIDC audience; must equal PUSH_AUDIENCE configured on the Cloud Run service (its base URL)"
+  type        = string
+}
 variable "pubsub_push_sa_email" { type = string }
 
 variable "enable_schema_validation" {
@@ -262,7 +266,7 @@ resource "google_pubsub_subscription" "shipments_notification" {
     push_endpoint = var.notification_push_url
     oidc_token {
       service_account_email = var.pubsub_push_sa_email
-      audience              = var.notification_push_url
+      audience              = var.notification_push_audience
     }
   }
   retry_policy {

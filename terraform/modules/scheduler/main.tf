@@ -31,7 +31,7 @@ resource "google_cloud_scheduler_job" "daily_reconciliation" {
     }
     body = base64encode(jsonencode({
       launchParameter = {
-        jobName           = "daily-reconciliation-scheduled"
+        jobName              = "daily-reconciliation-scheduled"
         containerSpecGcsPath = "gs://${var.dataflow_bucket}/templates/daily-reconciliation.json"
         parameters = {
           legacyExtractPath = "gs://${var.legacy_extract_bucket}/extracts/*.xml"

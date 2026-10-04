@@ -51,27 +51,53 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
+          terraform_wrapper: false
 
       - name: terraform fmt
         run: terraform fmt -check -recursive || (echo "::warning::run 'terraform fmt -recursive'" && true)
 
       - name: terraform init
-        run: terraform init -backend-config="bucket=${TF_STATE_BUCKET}"
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform init -no-color -backend-config="bucket=${TF_STATE_BUCKET}" 2>&1 | tee -a ../tf.log
 
       - name: terraform validate
-        run: terraform validate
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform validate -no-color 2>&1 | tee -a ../tf.log
 
       - name: terraform plan
         if: github.event_name == 'pull_request' || inputs.action == 'plan' || inputs.action == '' || github.event_name == 'push'
-        run: terraform plan -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" -out=tfplan -no-color | tail -n 80
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform plan -no-color -input=false -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" -out=tfplan 2>&1 | tee -a ../tf.log | tail -n 120
 
       - name: terraform apply
         if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.action == 'apply'
-        run: terraform apply -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}"
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform apply -no-color -input=false -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" 2>&1 | tee -a ../tf.log | tail -n 200
 
       - name: terraform destroy
         if: inputs.action == 'destroy'
-        run: terraform destroy -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}"
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform destroy -no-color -input=false -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" 2>&1 | tee -a ../tf.log | tail -n 120
+
+      - name: publish result as annotations
+        if: always()
+        shell: bash
+        run: |
+          # Annotations are readable on the public run page (no sign-in), which is how the results are reviewed.
+          f=../tf.log; [ -f "$f" ] || exit 0
+          grep -E "^(Plan:|Apply complete|Destroy complete|No changes)" "$f" | while IFS= read -r l; do echo "::notice title=terraform::$l"; done
+          awk '/^(│ )?Error: /{n=6} n>0 {print; n--}' "$f" | sed 's/^│ //' | grep -v '^\s*$' | awk '!seen[$0]++' | head -n 40 \
+            | while IFS= read -r l; do echo "::error title=terraform::${l:0:900}"; done
 
       - name: outputs
         if: inputs.action != 'destroy' && github.event_name != 'pull_request'

@@ -22,7 +22,7 @@ resource "google_sql_database_instance" "pg" {
     user_labels       = var.labels
 
     ip_configuration {
-      ipv4_enabled = true          # connector handles auth/TLS; no authorized networks
+      ipv4_enabled = true # connector handles auth/TLS; no authorized networks
       ssl_mode     = "ENCRYPTED_ONLY"
     }
     backup_configuration {

@@ -59,26 +59,26 @@ module "bigquery" {
 }
 
 module "pubsub" {
-  source                   = "./modules/pubsub"
-  project_id               = var.project_id
-  project_number           = local.project_number
-  region                   = var.region
-  labels                   = local.labels
-  message_retention        = var.pubsub_message_retention
-  bigquery_dataset         = module.bigquery.dataset_id
-  bigquery_raw_table       = module.bigquery.orders_raw_table_id
-  notification_push_url    = "${local.notification_service_url}/push/shipments"
-  pubsub_push_sa_email     = module.iam.service_account_emails["pubsub-push"]
-  depends_on               = [module.bigquery]
+  source                = "./modules/pubsub"
+  project_id            = var.project_id
+  project_number        = local.project_number
+  region                = var.region
+  labels                = local.labels
+  message_retention     = var.pubsub_message_retention
+  bigquery_dataset      = module.bigquery.dataset_id
+  bigquery_raw_table    = module.bigquery.orders_raw_table_id
+  notification_push_url = "${local.notification_service_url}/push/shipments"
+  pubsub_push_sa_email  = module.iam.service_account_emails["pubsub-push"]
+  depends_on            = [module.bigquery]
 }
 
 module "cloudsql" {
-  count       = var.enable_cloudsql ? 1 : 0
-  source      = "./modules/cloudsql"
-  project_id  = var.project_id
-  region      = var.region
-  tier        = var.cloudsql_tier
-  labels      = local.labels
+  count      = var.enable_cloudsql ? 1 : 0
+  source     = "./modules/cloudsql"
+  project_id = var.project_id
+  region     = var.region
+  tier       = var.cloudsql_tier
+  labels     = local.labels
 }
 
 module "gke" {

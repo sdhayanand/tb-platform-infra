@@ -89,13 +89,13 @@ resource "google_service_account_iam_member" "scheduler_acts_as_dataflow" {
 # ---------------------------------------------------------------------------
 locals {
   workload_identity = {
-    "otd/order-intake-api"      = "order-intake-api"
-    "otd/inventory-service"     = "inventory-service"
-    "otd/jms-to-pubsub-bridge"  = "tb-migration-bridge"
-    "otd/pubsub-to-jms-bridge"  = "tb-migration-bridge"
-    "legacy/ems-broker"         = "tb-legacy-sim"
-    "legacy/legacy-oms-soap"    = "tb-legacy-sim"
-    "legacy/erp-mq-consumer"    = "tb-legacy-sim"
+    "otd/order-intake-api"       = "order-intake-api"
+    "otd/inventory-service"      = "inventory-service"
+    "otd/jms-to-pubsub-bridge"   = "tb-migration-bridge"
+    "otd/pubsub-to-jms-bridge"   = "tb-migration-bridge"
+    "legacy/ems-broker"          = "tb-legacy-sim"
+    "legacy/legacy-oms-soap"     = "tb-legacy-sim"
+    "legacy/erp-mq-consumer"     = "tb-legacy-sim"
     "legacy/store-pos-simulator" = "tb-legacy-sim"
   }
 }

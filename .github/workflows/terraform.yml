@@ -1,5 +1,5 @@
 name: terraform
-# Plan on pull requests, apply on main / manual dispatch, destroy on manual dispatch.
+# Plan on pull requests and pushes; apply and destroy only by manual dispatch (action=apply|destroy).
 # Auth: keyless Workload Identity Federation (bootstrap/bootstrap.sh) — no JSON keys anywhere.
 on:
   pull_request:
@@ -76,7 +76,8 @@ jobs:
           terraform plan -no-color -input=false -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" -out=tfplan 2>&1 | tee -a ../tf.log | tail -n 120
 
       - name: terraform apply
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.action == 'apply'
+        # Pushes only plan; creating (paid) resources is an explicit, manual decision.
+        if: inputs.action == 'apply'
         shell: bash
         run: |
           set -o pipefail
@@ -112,7 +113,7 @@ jobs:
   cluster-config:
     # Namespaces + runtime secrets the service repos expect (they only deploy workloads).
     needs: terraform
-    if: vars.GCP_PROJECT_ID != '' && inputs.action != 'destroy' && inputs.action != 'plan' && github.event_name != 'pull_request'
+    if: vars.GCP_PROJECT_ID != '' && inputs.action == 'apply'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

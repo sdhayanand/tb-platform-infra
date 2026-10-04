@@ -1,0 +1,8 @@
+* Tailored Brands ERP integration queues on QM1 (applied by the MQ container at start-up from /etc/mqm/20-tb.mqsc).
+* ERP.ORDERS.IN  - orders for the ERP (today from TIBCO BW, during migration from the pubsub-to-jms-bridge)
+* ERP.INVOICE.OUT - invoices the ERP emits back toward the integration layer
+DEFINE QLOCAL('ERP.ORDERS.IN') DEFPSIST(YES) MAXDEPTH(100000) DESCR('Orders inbound to ERP') REPLACE
+DEFINE QLOCAL('ERP.INVOICE.OUT') DEFPSIST(YES) MAXDEPTH(100000) DESCR('Invoices outbound from ERP') REPLACE
+DEFINE QLOCAL('ERP.ORDERS.DLQ') DEFPSIST(YES) MAXDEPTH(100000) DESCR('Poison messages from ERP.ORDERS.IN') REPLACE
+* Let the dev app user (channel DEV.APP.SVRCONN) use the ERP queues
+SET AUTHREC PROFILE('ERP.**') OBJTYPE(QUEUE) PRINCIPAL('app') AUTHADD(BROWSE,GET,INQ,PUT)

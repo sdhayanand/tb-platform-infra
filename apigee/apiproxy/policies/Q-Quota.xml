@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Quota name="Q-Quota" type="calendar">
+  <DisplayName>Quota per app</DisplayName>
+  <!-- Allow is read from the API product (developer app) so each store/partner app has its own plan -->
+  <Identifier ref="client_id"/>
+  <Allow count="100000" countRef="verifyapikey.VK-VerifyApiKey.apiproduct.developer.quota.limit"/>
+  <Interval ref="verifyapikey.VK-VerifyApiKey.apiproduct.developer.quota.interval">1</Interval>
+  <TimeUnit ref="verifyapikey.VK-VerifyApiKey.apiproduct.developer.quota.timeunit">day</TimeUnit>
+  <StartTime>2026-01-01 00:00:00</StartTime>
+  <Distributed>true</Distributed>
+  <Synchronous>false</Synchronous>
+</Quota>

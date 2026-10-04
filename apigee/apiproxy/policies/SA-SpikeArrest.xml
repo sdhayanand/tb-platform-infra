@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<SpikeArrest name="SA-SpikeArrest">
+  <DisplayName>Spike Arrest</DisplayName>
+  <!-- Smooths bursts: 200 requests per second per store app identified by the API key -->
+  <Identifier ref="client_id"/>
+  <Rate>200ps</Rate>
+  <UseEffectiveCount>true</UseEffectiveCount>
+</SpikeArrest>

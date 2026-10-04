@@ -1,0 +1,132 @@
+name: terraform
+# Plan on pull requests, apply on main / manual dispatch, destroy on manual dispatch.
+# Auth: keyless Workload Identity Federation (bootstrap/bootstrap.sh) — no JSON keys anywhere.
+on:
+  pull_request:
+    paths: ['terraform/**']
+  push:
+    branches: [main]
+    paths: ['terraform/**', '.github/workflows/terraform.yml', 'k8s/**']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: plan | apply | destroy
+        required: true
+        default: apply
+        type: choice
+        options: [plan, apply, destroy]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive || (echo "::warning::run 'terraform fmt -recursive'" && true)
+
+      - name: terraform init
+        run: terraform init -backend-config="bucket=${TF_STATE_BUCKET}"
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        if: github.event_name == 'pull_request' || inputs.action == 'plan' || inputs.action == '' || github.event_name == 'push'
+        run: terraform plan -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" -out=tfplan -no-color | tail -n 80
+
+      - name: terraform apply
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.action == 'apply'
+        run: terraform apply -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}"
+
+      - name: terraform destroy
+        if: inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}"
+
+      - name: outputs
+        if: inputs.action != 'destroy' && github.event_name != 'pull_request'
+        run: terraform output -json > ../tf-outputs.json && cat ../tf-outputs.json
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.action != 'destroy' && github.event_name != 'pull_request'
+        with:
+          name: tf-outputs
+          path: tf-outputs.json
+
+  cluster-config:
+    # Namespaces + runtime secrets the service repos expect (they only deploy workloads).
+    needs: terraform
+    if: vars.GCP_PROJECT_ID != '' && inputs.action != 'destroy' && inputs.action != 'plan' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin,kubectl'
+      - name: cluster credentials
+        run: gcloud container clusters get-credentials tb-otd-autopilot --region "$REGION" --project "$PROJECT_ID"
+      - name: namespaces
+        run: kubectl apply -k k8s/namespaces
+      - name: runtime secrets from Secret Manager
+        env:
+          MQ_APP_PASSWORD: ${{ secrets.MQ_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          DB_PASSWORD="$(gcloud secrets versions access latest --secret=otd-db-password --project "$PROJECT_ID")"
+          # Cloud SQL Java connector URL (no sidecar): IAM auth via Workload Identity + password.
+          DB_URL="jdbc:postgresql:///otd?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=${PROJECT_ID}:${REGION}:tb-otd-pg"
+          kubectl -n otd create secret generic otd-db \
+            --from-literal=url="$DB_URL" --from-literal=username=otd --from-literal=password="$DB_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          JMS_URL="$(gcloud secrets versions access latest --secret=otd-jms-url --project "$PROJECT_ID")"
+          JMS_USER="$(gcloud secrets versions access latest --secret=otd-jms-username --project "$PROJECT_ID")"
+          JMS_PASSWORD="$(gcloud secrets versions access latest --secret=otd-jms-password --project "$PROJECT_ID")"
+          kubectl -n otd create secret generic otd-jms \
+            --from-literal=url="$JMS_URL" --from-literal=username="$JMS_USER" --from-literal=password="$JMS_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          # IBM MQ (dev image in namespace legacy): user app / MQ_APP_PASSWORD
+          kubectl -n otd create secret generic otd-mq \
+            --from-literal=url="ibm-mq.legacy.svc.cluster.local:1414" --from-literal=username=app \
+            --from-literal=password="${MQ_APP_PASSWORD:-passw0rd}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "secrets ready"
+      - name: Cloud Run invoker for Pub/Sub push (idempotent; service may not exist yet)
+        run: |
+          gcloud run services add-iam-policy-binding notification-service \
+            --region "$REGION" --project "$PROJECT_ID" \
+            --member="serviceAccount:pubsub-push@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role="roles/run.invoker" --quiet || echo "notification-service not deployed yet; rerun after tb-integration-services deploy"

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<TargetEndpoint name="default">
+  <Description>order-intake-api on GKE (external LB). Replace the host with a Target Server in a real environment.</Description>
+  <PreFlow name="PreFlow">
+    <Request/>
+    <Response/>
+  </PreFlow>
+  <HTTPTargetConnection>
+    <!-- Use a TargetServer named order-intake-api (created by scripts/deploy-apigee.sh) so the host is per-environment config, not code. -->
+    <LoadBalancer>
+      <Server name="order-intake-api"/>
+      <MaxFailures>3</MaxFailures>
+    </LoadBalancer>
+    <Path>/v1/orders{proxy.pathsuffix}</Path>
+    <HealthMonitor>
+      <IsEnabled>true</IsEnabled>
+      <IntervalInSec>30</IntervalInSec>
+      <HTTPMonitor>
+        <Request>
+          <ConnectTimeoutInSec>5</ConnectTimeoutInSec>
+          <SocketReadTimeoutInSec>10</SocketReadTimeoutInSec>
+          <Verb>GET</Verb>
+          <Path>/actuator/health/readiness</Path>
+        </Request>
+        <SuccessResponse>
+          <ResponseCode>200</ResponseCode>
+        </SuccessResponse>
+      </HTTPMonitor>
+    </HealthMonitor>
+    <Properties>
+      <Property name="connect.timeout.millis">3000</Property>
+      <Property name="io.timeout.millis">10000</Property>
+      <Property name="retain.queryparams">true</Property>
+    </Properties>
+  </HTTPTargetConnection>
+</TargetEndpoint>

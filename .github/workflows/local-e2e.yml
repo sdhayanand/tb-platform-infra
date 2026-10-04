@@ -1,0 +1,71 @@
+name: local-e2e
+# Whole-platform end-to-end on a single runner: every image from GHCR + Pub/Sub emulator +
+# Postgres + Artemis (EMS stand-in). Proves the integration paths without any GCP resources.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: image tag for all tb-* images
+        default: latest
+      with_dataflow:
+        description: also run the Beam streaming pipeline on the DirectRunner
+        type: boolean
+        default: true
+  schedule:
+    - cron: '17 7 * * 1-5'   # weekday mornings, catches image drift
+  push:
+    branches: [main]
+    paths: ['local/**', '.github/workflows/local-e2e.yml']
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+      COMPOSE: docker compose -f local/docker-compose.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: checkout tb-order-events-dataflow (DirectRunner leg)
+        if: inputs.with_dataflow != false
+        uses: actions/checkout@v4
+        with:
+          repository: sdhayanand/tb-order-events-dataflow
+          path: dataflow
+
+      - uses: actions/setup-java@v4
+        if: inputs.with_dataflow != false
+        with: { distribution: temurin, java-version: '21', cache: maven }
+
+      - name: login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: pull images
+        run: $COMPOSE pull --ignore-buildable || $COMPOSE pull
+
+      - name: start stack
+        run: $COMPOSE up -d
+
+      - name: wait for the slow ones (Spring Boot + embedded Artemis)
+        run: sleep 45 && $COMPOSE ps
+
+      - name: run e2e
+        env:
+          WITH_DATAFLOW: ${{ inputs.with_dataflow != false && '1' || '0' }}
+          DATAFLOW_REPO: ${{ github.workspace }}/dataflow
+        run: |
+          cd local
+          COMPOSE="docker compose -f docker-compose.yml" ./e2e.sh
+
+      - name: logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail=200
+
+      - name: tear down
+        if: always()
+        run: $COMPOSE down -v

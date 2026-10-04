@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otd
+  labels:
+    platform: tb-otd
+    tier: services
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: legacy
+  labels:
+    platform: tb-otd
+    tier: legacy-simulators
+    pod-security.kubernetes.io/enforce: baseline

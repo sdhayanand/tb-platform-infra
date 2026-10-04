@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+// Pub/Sub schema for topic shipments-v1 (JSON encoding). Mirrors ARCHITECTURE.md §3.3.
+message ShipmentEvent {
+  string event_id = 1;
+  string event_type = 2;        // SHIPMENT_UPDATED
+  string event_time = 3;
+  string schema_version = 4;
+  string source = 5;
+  string correlation_id = 6;
+  string order_id = 7;
+  string tracking_number = 8;
+  string carrier = 9;           // UPS | FEDEX
+  string status = 10;           // LABEL_CREATED | IN_TRANSIT | OUT_FOR_DELIVERY | DELIVERED | EXCEPTION
+  string status_time = 11;
+  string location = 12;
+}

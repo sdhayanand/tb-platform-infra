@@ -1,0 +1,39 @@
+name: deploy-all
+# Orchestrates a full platform rollout in dependency order by dispatching each repo's
+# deploy-gcp workflow (infra → legacy simulators → services → bridges → dataflow).
+# Needs a PAT with `actions:write` on the sibling repos as secret CROSS_REPO_TOKEN; otherwise run
+# each repo's "deploy-gcp" workflow by hand in this order.
+on:
+  workflow_dispatch:
+    inputs:
+      start_streaming:
+        description: start the Dataflow streaming job after deploying the templates
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  fan-out:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: dispatch in order
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          dispatch() { # repo workflow [inputs-json]
+            echo "==> $1 / $2"
+            gh workflow run "$2" --repo "sdhayanand/$1" ${3:+--raw-field "$3"} || { echo "dispatch failed for $1 (token scope?)"; exit 1; }
+            sleep 20
+            run_id=$(gh run list --repo "sdhayanand/$1" --workflow "$2" --limit 1 --json databaseId --jq '.[0].databaseId')
+            gh run watch "$run_id" --repo "sdhayanand/$1" --exit-status
+          }
+          dispatch tb-legacy-simulators deploy-gcp.yml
+          dispatch tb-integration-services deploy-gcp.yml
+          dispatch tb-tibco-to-pubsub-migration deploy-gcp.yml
+          dispatch tb-order-events-dataflow deploy-gcp.yml "start_streaming=${{ inputs.start_streaming }}"
+          echo "platform deployed"

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RaiseFault name="RF-Unauthorized">
+  <DisplayName>401 problem+json</DisplayName>
+  <FaultResponse>
+    <Set>
+      <Headers>
+        <Header name="Content-Type">application/problem+json</Header>
+      </Headers>
+      <Payload contentType="application/problem+json">{"type":"https://api.tailoredbrands.com/problems/unauthorized","title":"Invalid or missing API key","status":401,"detail":"{fault.name}"}</Payload>
+      <StatusCode>401</StatusCode>
+      <ReasonPhrase>Unauthorized</ReasonPhrase>
+    </Set>
+  </FaultResponse>
+  <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+</RaiseFault>

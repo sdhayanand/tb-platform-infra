@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ProxyEndpoint name="default">
+  <Description>Public order intake behind API key + rate limiting</Description>
+  <PreFlow name="PreFlow">
+    <Request>
+      <Step><Name>AM-Cors</Name></Step>
+      <Step>
+        <Name>VK-VerifyApiKey</Name>
+        <Condition>request.verb != "OPTIONS"</Condition>
+      </Step>
+      <Step><Name>SA-SpikeArrest</Name></Step>
+      <Step><Name>Q-Quota</Name></Step>
+      <Step>
+        <Name>JTP-JsonThreat</Name>
+        <Condition>request.verb = "POST"</Condition>
+      </Step>
+      <Step>
+        <Name>OAS-Validate</Name>
+        <Condition>request.verb = "POST"</Condition>
+      </Step>
+      <Step><Name>AM-CorrelationId</Name></Step>
+      <Step><Name>AM-StripApiKey</Name></Step>
+    </Request>
+    <Response/>
+  </PreFlow>
+  <Flows>
+    <Flow name="CreateOrder">
+      <Description>POST /v1/orders</Description>
+      <Condition>(proxy.pathsuffix MatchesPath "/") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="GetOrder">
+      <Description>GET /v1/orders/{orderId}</Description>
+      <Condition>(proxy.pathsuffix MatchesPath "/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="Preflight">
+      <Condition>request.verb = "OPTIONS"</Condition>
+      <Request/>
+      <Response/>
+    </Flow>
+  </Flows>
+  <PostFlow name="PostFlow">
+    <Request/>
+    <Response/>
+  </PostFlow>
+  <FaultRules>
+    <FaultRule name="InvalidApiKey">
+      <Step><Name>RF-Unauthorized</Name></Step>
+      <Condition>(fault.name = "FailedToResolveAPIKey") or (fault.name = "InvalidApiKey") or (fault.name = "InvalidApiKeyForGivenResource")</Condition>
+    </FaultRule>
+  </FaultRules>
+  <HTTPProxyConnection>
+    <BasePath>/v1/orders</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="noroute">
+    <Condition>request.verb = "OPTIONS"</Condition>
+  </RouteRule>
+  <RouteRule name="default">
+    <TargetEndpoint>default</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

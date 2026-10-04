@@ -1,0 +1,29 @@
+# Only the migration bridges and the dual-writing order-intake-api may talk to the legacy
+# brokers; everything else in `otd` is isolated from `legacy`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: legacy-ingress-from-otd-bridges
+  namespace: legacy
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: legacy }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: otd }
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [jms-to-pubsub-bridge, pubsub-to-jms-bridge, order-intake-api]
+    - from:
+        - namespaceSelector: {}   # kube-system / load balancer health checks
+          podSelector: {}
+      ports:
+        - port: 8085
+        - port: 8086
+        - port: 8087

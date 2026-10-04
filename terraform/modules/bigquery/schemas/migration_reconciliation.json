@@ -1,0 +1,11 @@
+[
+  {"name": "run_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "from_ts", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "to_ts", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "phase", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "matched", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "only_legacy", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "only_pubsub", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "mismatched", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "details", "type": "STRING", "mode": "NULLABLE", "description": "JSON with the differing order ids"}
+]

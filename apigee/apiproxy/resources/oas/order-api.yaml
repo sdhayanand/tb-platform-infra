@@ -1,0 +1,243 @@
+openapi: 3.0.3
+info:
+  title: Tailored Brands Order API
+  version: "1.0.0"
+  description: |
+    Order intake for store POS, e-commerce and partner channels. Fronted by Apigee
+    (API key, spike arrest, quota, JSON threat protection, request validation against this spec).
+    Backend: order-intake-api (Spring Boot on GKE Autopilot).
+  contact:
+    name: Integration Engineering
+servers:
+  - url: https://api.tb-otd.example/v1/orders
+    description: Apigee (dev)
+security:
+  - ApiKeyAuth: []
+paths:
+  /:
+    post:
+      operationId: createOrder
+      summary: Create an order
+      description: Persists the order and publishes `ORDER_CREATED` to Pub/Sub `orders-v1` via the transactional outbox.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            examples:
+              tailored:
+                $ref: '#/components/examples/TailoredOrder'
+              rental:
+                $ref: '#/components/examples/RentalOrder'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+              description: URL of the created order
+            X-Correlation-Id:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderCreatedResponse'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+  /{orderId}:
+    get:
+      operationId: getOrder
+      summary: Get an order with its current status
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ORD-[0-9]{4}-[0-9]{6}$'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+  responses:
+    Problem:
+      description: RFC 7807 problem
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [orderType, storeId, lines]
+      additionalProperties: false
+      properties:
+        orderType:
+          type: string
+          enum: [RETAIL, TAILORED, CUSTOM, RENTAL, ECOM]
+        channel:
+          type: string
+          enum: [STORE, WEB, CALL_CENTER]
+          default: STORE
+        storeId:
+          type: string
+          pattern: '^[0-9]{4}$'
+        customerId:
+          type: string
+          maxLength: 64
+        orderedAt:
+          type: string
+          format: date-time
+        promisedDate:
+          type: string
+          format: date
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          default: USD
+        totalAmount:
+          type: number
+          minimum: 0
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        rental:
+          $ref: '#/components/schemas/Rental'
+        shipTo:
+          $ref: '#/components/schemas/Address'
+    OrderLine:
+      type: object
+      required: [sku, quantity, unitPrice, fulfillmentType]
+      additionalProperties: false
+      properties:
+        lineNumber: { type: integer, minimum: 1 }
+        sku:
+          type: string
+          maxLength: 64
+          pattern: '^[A-Z0-9][A-Z0-9\-]*$'
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+        unitPrice: { type: number, minimum: 0 }
+        fulfillmentType:
+          type: string
+          enum: [STORE_PICKUP, SHIP_TO_HOME, ALTERATION]
+        alteration:
+          $ref: '#/components/schemas/Alteration'
+    Alteration:
+      type: object
+      required: [type]
+      additionalProperties: false
+      properties:
+        type: { type: string, maxLength: 32, example: HEM }
+        measurementInches: { type: number, minimum: 0, maximum: 120 }
+        tailorShopId: { type: string, maxLength: 32 }
+    Rental:
+      type: object
+      additionalProperties: false
+      properties:
+        eventId: { type: string, maxLength: 64 }
+        eventDate: { type: string, format: date }
+        returnDueDate: { type: string, format: date }
+        groupId: { type: string, maxLength: 64 }
+    Address:
+      type: object
+      required: [line1, city, state, postalCode]
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 128 }
+        line1: { type: string, maxLength: 128 }
+        line2: { type: string, maxLength: 128 }
+        city: { type: string, maxLength: 64 }
+        state: { type: string, maxLength: 32 }
+        postalCode: { type: string, maxLength: 16 }
+        country: { type: string, minLength: 2, maxLength: 2, default: US }
+    OrderCreatedResponse:
+      type: object
+      properties:
+        orderId: { type: string, example: ORD-2026-000123 }
+        status: { type: string, enum: [CREATED, RESERVED, BACKORDERED, CANCELLED] }
+    OrderResponse:
+      type: object
+      properties:
+        orderId: { type: string }
+        status: { type: string }
+        orderType: { type: string }
+        channel: { type: string }
+        storeId: { type: string }
+        customerId: { type: string }
+        orderedAt: { type: string, format: date-time }
+        promisedDate: { type: string, format: date }
+        currency: { type: string }
+        totalAmount: { type: number }
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+  examples:
+    TailoredOrder:
+      summary: Suit with a hem alteration, store pickup
+      value:
+        orderType: TAILORED
+        channel: STORE
+        storeId: "0412"
+        customerId: C-77812
+        promisedDate: "2026-10-10"
+        lines:
+          - sku: MW-SUIT-NAVY-42R
+            quantity: 1
+            unitPrice: 599.99
+            fulfillmentType: STORE_PICKUP
+          - sku: ALT-HEM-TROUSER
+            quantity: 1
+            unitPrice: 50.00
+            fulfillmentType: ALTERATION
+            alteration: { type: HEM, measurementInches: 31.5, tailorShopId: TS-EASTBAY }
+    RentalOrder:
+      summary: Tuxedo rental for a wedding party
+      value:
+        orderType: RENTAL
+        channel: WEB
+        storeId: "0875"
+        customerId: C-10021
+        lines:
+          - sku: RNT-TUX-BLACK-40R
+            quantity: 1
+            unitPrice: 199.00
+            fulfillmentType: SHIP_TO_HOME
+        rental: { eventId: WED-55901, eventDate: "2026-10-18", returnDueDate: "2026-10-20", groupId: WED-55901-G1 }
+        shipTo: { name: John Smith, line1: 1 Main St, city: Dublin, state: CA, postalCode: "94568", country: US }

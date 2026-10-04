@@ -1,0 +1,27 @@
+store_id,store_name,region,timezone
+0412,Men's Wearhouse Pleasanton,WEST,America/Los_Angeles
+0875,Men's Wearhouse Dublin,WEST,America/Los_Angeles
+1021,Jos. A. Bank Walnut Creek,WEST,America/Los_Angeles
+0133,Men's Wearhouse San Jose,WEST,America/Los_Angeles
+0288,Men's Wearhouse Fremont,WEST,America/Los_Angeles
+0501,Jos. A. Bank Sacramento,WEST,America/Los_Angeles
+0617,Men's Wearhouse Portland,WEST,America/Los_Angeles
+0702,Men's Wearhouse Seattle,WEST,America/Los_Angeles
+0955,Men's Wearhouse Phoenix,WEST,America/Phoenix
+1108,Jos. A. Bank Denver,CENTRAL,America/Denver
+1212,Men's Wearhouse Dallas,CENTRAL,America/Chicago
+1340,Men's Wearhouse Houston,CENTRAL,America/Chicago
+1455,Jos. A. Bank Chicago,CENTRAL,America/Chicago
+1501,Men's Wearhouse Minneapolis,CENTRAL,America/Chicago
+1633,Men's Wearhouse Atlanta,EAST,America/New_York
+1744,Jos. A. Bank Charlotte,EAST,America/New_York
+1802,Men's Wearhouse Miami,EAST,America/New_York
+1915,Jos. A. Bank Boston,EAST,America/New_York
+2030,Men's Wearhouse New York,EAST,America/New_York
+2147,Jos. A. Bank Philadelphia,EAST,America/New_York
+2201,Men's Wearhouse Washington DC,EAST,America/New_York
+2318,Moores Toronto,CANADA,America/Toronto
+2420,Moores Vancouver,CANADA,America/Vancouver
+2533,K&G Fashion Superstore Houston,CENTRAL,America/Chicago
+2610,Men's Wearhouse Online,ECOM,America/Los_Angeles
+DC01,Houston Distribution Center,DC,America/Chicago

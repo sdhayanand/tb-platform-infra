@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<APIProxy revision="1" name="tb-order-api-v1">
+  <DisplayName>Tailored Brands Order API v1</DisplayName>
+  <Description>API-gateway facade for order-intake-api (GKE): API key, spike arrest, quota, JSON threat protection, OpenAPI validation, correlation id, CORS.</Description>
+  <BasePaths>/v1/orders</BasePaths>
+  <Policies>
+    <Policy>VK-VerifyApiKey</Policy>
+    <Policy>SA-SpikeArrest</Policy>
+    <Policy>Q-Quota</Policy>
+    <Policy>JTP-JsonThreat</Policy>
+    <Policy>OAS-Validate</Policy>
+    <Policy>AM-CorrelationId</Policy>
+    <Policy>AM-StripApiKey</Policy>
+    <Policy>AM-Cors</Policy>
+    <Policy>RF-Unauthorized</Policy>
+  </Policies>
+  <ProxyEndpoints>
+    <ProxyEndpoint>default</ProxyEndpoint>
+  </ProxyEndpoints>
+  <TargetEndpoints>
+    <TargetEndpoint>default</TargetEndpoint>
+  </TargetEndpoints>
+</APIProxy>

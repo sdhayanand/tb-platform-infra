@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<CORS name="AM-Cors">
+  <DisplayName>CORS</DisplayName>
+  <AllowOrigins>{request.header.origin}</AllowOrigins>
+  <AllowMethods>GET, POST, OPTIONS</AllowMethods>
+  <AllowHeaders>origin, x-requested-with, accept, content-type, x-api-key, x-correlation-id</AllowHeaders>
+  <ExposeHeaders>location, x-correlation-id</ExposeHeaders>
+  <MaxAge>3628800</MaxAge>
+  <AllowCredentials>false</AllowCredentials>
+  <GeneratePreflightResponse>true</GeneratePreflightResponse>
+  <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+</CORS>

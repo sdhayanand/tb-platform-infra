@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OASValidation name="OAS-Validate">
+  <DisplayName>OpenAPI request validation</DisplayName>
+  <Source>request</Source>
+  <OASResource>oas://order-api.yaml</OASResource>
+  <Options>
+    <ValidateMessageBody>true</ValidateMessageBody>
+    <AllowUnspecifiedParameters>
+      <Header>true</Header>
+      <Query>false</Query>
+      <Formdata>false</Formdata>
+    </AllowUnspecifiedParameters>
+  </Options>
+</OASValidation>

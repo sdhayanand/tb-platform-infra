@@ -1,0 +1,213 @@
+# =============================================================================
+# Whole-platform local stack (images from GHCR, built by each repo's CI).
+#
+#   cd local && docker compose up -d && ./e2e.sh
+#
+#   New order path : order-intake-api -> Pub/Sub emulator orders-v1 -> inventory-service -> inventory-v1
+#   Legacy path    : ems-broker (TIBCO EMS stand-in) TB.ORDERS.OUT -> jms-to-pubsub-bridge -> orders-v1
+#   Reverse bridge : orders-v1 -> pubsub-to-jms-bridge -> ERP.ORDERS.IN -> erp-mq-consumer (ERP)
+#   Shipments      : shipment-webhook -> shipments-v1 -> push -> notification-service
+#   IBM MQ         : optional, `--profile mq` (icr.io image, ~1 GB); default wiring uses ems-broker for ERP.ORDERS.IN
+#
+# Override IMAGE_TAG=<sha> to pin images; defaults to :latest.
+# =============================================================================
+name: tb-otd-platform
+
+x-pubsub-env: &pubsub-env
+  PUBSUB_PROJECT: tb-otd-local
+  PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: otd
+      POSTGRES_USER: otd
+      POSTGRES_PASSWORD: otd
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otd -d otd"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: ["gcloud", "beta", "emulators", "pubsub", "start", "--host-port=0.0.0.0:8085", "--project=tb-otd-local"]
+    ports: ["8085:8085"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8085/')\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  pubsub-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      pubsub-emulator: { condition: service_healthy }
+    environment:
+      PUBSUB: http://pubsub-emulator:8085
+      PROJECT: tb-otd-local
+    volumes:
+      - ./pubsub-init.sh:/init.sh:ro
+    entrypoint: ["sh", "/init.sh"]
+    restart: "no"
+
+  # ---------------- new platform services ----------------
+  order-intake-api:
+    image: ghcr.io/sdhayanand/tb-order-intake-api:${IMAGE_TAG:-latest}
+    depends_on:
+      postgres: { condition: service_healthy }
+      pubsub-init: { condition: service_completed_successfully }
+      ems-broker: { condition: service_healthy }
+    environment:
+      <<: *pubsub-env
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/otd
+      DB_USER: otd
+      DB_PASSWORD: otd
+      ORDERS_TOPIC: orders-v1
+      INVENTORY_SUBSCRIPTION: inventory-order-intake
+      MIGRATION_PHASE: ${MIGRATION_PHASE:-DUAL_RUN}
+      LEGACY_JMS_URL: tcp://ems-broker:61616
+      LEGACY_JMS_USER: bridge
+      LEGACY_JMS_PASSWORD: bridge
+      LEGACY_OMS_SOAP_URL: http://legacy-oms-soap:8085/ws
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/readiness | grep -q UP || curl -fsS http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  inventory-service:
+    image: ghcr.io/sdhayanand/tb-inventory-service:${IMAGE_TAG:-latest}
+    depends_on:
+      order-intake-api: { condition: service_healthy }
+    environment:
+      <<: *pubsub-env
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/otd
+      DB_USER: otd
+      DB_PASSWORD: otd
+      ORDERS_SUBSCRIPTION: orders-inventory-service
+      INVENTORY_TOPIC: inventory-v1
+    ports: ["8081:8081"]
+
+  shipment-webhook:
+    image: ghcr.io/sdhayanand/tb-shipment-webhook:${IMAGE_TAG:-latest}
+    depends_on:
+      pubsub-init: { condition: service_completed_successfully }
+    environment:
+      <<: *pubsub-env
+      SPRING_PROFILES_ACTIVE: local
+      SHIPMENTS_TOPIC: shipments-v1
+      WEBHOOK_SHARED_SECRET: ${WEBHOOK_SHARED_SECRET:-local-dev-secret}
+    ports: ["8082:8080"]
+
+  notification-service:
+    image: ghcr.io/sdhayanand/tb-notification-service:${IMAGE_TAG:-latest}
+    depends_on:
+      pubsub-init: { condition: service_completed_successfully }
+    environment:
+      PUSH_AUDIENCE: ""
+      NOTIFY_MODE: log
+      LOG_JSON: "false"
+    ports: ["8083:8080"]
+
+  # ---------------- legacy estate (simulators) ----------------
+  ems-broker:
+    image: ghcr.io/sdhayanand/tb-ems-broker:${IMAGE_TAG:-latest}
+    environment:
+      PUBLISH_RATE_PER_MIN: ${PUBLISH_RATE_PER_MIN:-0}   # e2e drives it explicitly; set 6 for a live trickle
+      ARTEMIS_ACCEPTOR_URL: tcp://0.0.0.0:61616
+    ports: ["61616:61616", "8086:8086"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8086/actuator/health/readiness || wget -qO- http://localhost:8086/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  legacy-oms-soap:
+    image: ghcr.io/sdhayanand/tb-legacy-oms-soap:${IMAGE_TAG:-latest}
+    environment:
+      OMS_EXTRACT_BUCKET: ""
+    ports: ["8089:8085"]
+
+  erp-mq-consumer:
+    # ERP side. Default: reads ERP.ORDERS.IN from the Artemis/EMS stand-in. With --profile mq it is IBM MQ.
+    image: ghcr.io/sdhayanand/tb-erp-mq-consumer:${IMAGE_TAG:-latest}
+    depends_on:
+      ems-broker: { condition: service_healthy }
+    environment:
+      JMS_PROVIDER: ${ERP_JMS_PROVIDER:-artemis}
+      JMS_URL: tcp://ems-broker:61616
+      MQ_HOST: ibm-mq
+      MQ_PORT: "1414"
+      MQ_QMGR: QM1
+      MQ_CHANNEL: DEV.APP.SVRCONN
+      MQ_USER: app
+      MQ_PASSWORD: passw0rd
+      MQ_QUEUE: ERP.ORDERS.IN
+    ports: ["8087:8087"]
+
+  ibm-mq:
+    profiles: ["mq"]
+    image: icr.io/ibm-messaging/mq:latest
+    environment:
+      LICENSE: accept
+      MQ_QMGR_NAME: QM1
+      MQ_APP_PASSWORD: passw0rd
+      MQ_ADMIN_PASSWORD: passw0rd
+    ports: ["1414:1414", "9443:9443"]
+    volumes:
+      - ./ibm-mq/20-tb.mqsc:/etc/mqm/20-tb.mqsc:ro
+    healthcheck:
+      test: ["CMD", "chkmqready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ---------------- migration bridges ----------------
+  jms-to-pubsub-bridge:
+    image: ghcr.io/sdhayanand/tb-jms-to-pubsub-bridge:${IMAGE_TAG:-latest}
+    depends_on:
+      ems-broker: { condition: service_healthy }
+      pubsub-init: { condition: service_completed_successfully }
+    environment:
+      <<: *pubsub-env
+      JMS_PROVIDER: artemis
+      JMS_URL: tcp://ems-broker:61616
+      JMS_USER: bridge
+      JMS_PASSWORD: bridge
+      JMS_SOURCE: TB.ORDERS.OUT
+      TARGET_TOPIC: orders-v1
+      DLQ_TOPIC: events-dlq
+      MIGRATION_PHASE: ${MIGRATION_PHASE:-DUAL_RUN}
+      MIGRATION_CONTROL_SUBSCRIPTION: migration-control-jms-to-pubsub
+    ports: ["8090:8090"]
+
+  pubsub-to-jms-bridge:
+    image: ghcr.io/sdhayanand/tb-pubsub-to-jms-bridge:${IMAGE_TAG:-latest}
+    depends_on:
+      ems-broker: { condition: service_healthy }
+      pubsub-init: { condition: service_completed_successfully }
+    environment:
+      <<: *pubsub-env
+      JMS_PROVIDER: ${ERP_JMS_PROVIDER:-artemis}
+      JMS_URL: tcp://ems-broker:61616
+      JMS_USER: ${ERP_JMS_USER:-bridge}
+      JMS_PASSWORD: ${ERP_JMS_PASSWORD:-bridge}
+      MQ_HOST: ibm-mq
+      MQ_PORT: "1414"
+      MQ_QMGR: QM1
+      MQ_CHANNEL: DEV.APP.SVRCONN
+      JMS_DESTINATION: ERP.ORDERS.IN
+      SOURCE_SUBSCRIPTION: orders-to-legacy-mq
+      DLQ_TOPIC: events-dlq
+      MIGRATION_PHASE: ${MIGRATION_PHASE:-DUAL_RUN}
+      MIGRATION_CONTROL_SUBSCRIPTION: migration-control-pubsub-to-jms
+    ports: ["8091:8091"]

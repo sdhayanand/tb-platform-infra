@@ -59,8 +59,15 @@ if ! gcloud iam service-accounts describe "${DEPLOYER_SA}" >/dev/null 2>&1; then
 fi
 # Demo project: the deployer owns the project so Terraform can create IAM bindings, SAs, WIF, etc.
 # In a real org you would split this into a least-privilege set per workflow.
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-  --member="serviceAccount:${DEPLOYER_SA}" --role="roles/owner" --condition=None --quiet >/dev/null
+# A brand-new service account takes a few seconds to become visible to IAM; retry the binding.
+for attempt in 1 2 3 4 5 6; do
+  if gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+       --member="serviceAccount:${DEPLOYER_SA}" --role="roles/owner" --condition=None --quiet >/dev/null 2>&1; then
+    break
+  fi
+  [ "$attempt" -eq 6 ] && { echo "IAM binding for ${DEPLOYER_SA} failed after retries"; exit 1; }
+  echo "    service account not visible to IAM yet, retrying in 10s ($attempt/6)"; sleep 10
+done
 
 echo "==> [4/5] Workload Identity Federation for GitHub Actions"
 if ! gcloud iam workload-identity-pools describe "${POOL_ID}" --location=global >/dev/null 2>&1; then

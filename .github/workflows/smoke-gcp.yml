@@ -1,0 +1,30 @@
+name: smoke-gcp
+# End-to-end smoke test against the deployed platform. Every check is published as a run
+# annotation (visible on the public run page).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  smoke:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+      GKE_LOCATION: ${{ vars.GKE_LOCATION || 'us-east1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin,kubectl,bq'
+      - name: smoke test
+        run: bash scripts/smoke-gcp.sh

@@ -23,24 +23,48 @@ note() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice title=$1::$2"; els
 bad()  { FAILS=$((FAILS+1)); if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error title=$1::$2"; else printf "\033[31mFAIL\033[0m %-28s %s\n" "$1" "$2"; fi; }
 info() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice title=$1::$2"; else printf "INFO %-28s %s\n" "$1" "$2"; fi; }
 json() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
-bqq()  { bq --project_id="$PROJECT_ID" query --nouse_legacy_sql --format=csv --quiet "$1" 2>&1 | tail -n +2; }
+# first column of the first row, or the BigQuery error text
+bqq()  { bq --project_id="$PROJECT_ID" query --nouse_legacy_sql --format=json --quiet "$1" 2>&1 \
+           | python3 -c "import sys,json
+t=sys.stdin.read()
+try:
+    rows=json.loads(t[t.index('['):])
+    print(list(rows[0].values())[0] if rows else '')
+except Exception:
+    print(' '.join(t.split())[:400])"; }
 
 gcloud container clusters get-credentials tb-otd-autopilot --region "$GKE_LOCATION" --project "$PROJECT_ID" >/dev/null 2>&1 \
   || { bad "gke" "cannot get credentials for tb-otd-autopilot in $GKE_LOCATION"; exit 1; }
 
 # ---------- 0. workloads ----------
 for ns in otd legacy; do
-  NOTREADY=$(kubectl -n "$ns" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); if (a[1]!=a[2] && $3!="Completed") print $1"("$3")"}' | tr '\n' ' ')
-  TOTAL=$(kubectl -n "$ns" get pods --no-headers 2>/dev/null | grep -vc Completed)
+  # long-running workloads only (pods created by Jobs/CronJobs are reported separately below)
+  PODS=$(kubectl -n "$ns" get pods --no-headers -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[*].ready,PHASE:.status.phase,OWNER:.metadata.ownerReferences[0].kind 2>/dev/null | grep -v " Job$")
+  NOTREADY=$(echo "$PODS" | awk 'NF && ($2 ~ /false/ || $3!="Running") {print $1"("$3")"}' | tr '\n' ' ')
+  TOTAL=$(echo "$PODS" | awk 'NF' | wc -l)
   if [ -z "$NOTREADY" ]; then note "pods/$ns" "$TOTAL pods ready: $(kubectl -n "$ns" get deploy,sts -o name 2>/dev/null | sed 's#.*/##' | tr '\n' ' ')"
   else bad "pods/$ns" "not ready: $NOTREADY"; fi
+done
+for job in $(kubectl -n legacy get pods --no-headers -o custom-columns=NAME:.metadata.name,PHASE:.status.phase,OWNER:.metadata.ownerReferences[0].kind 2>/dev/null | awk '$3=="Job" && $2=="Failed" {print $1}' | head -1); do
+  info "cronjob-diagnostics" "$job: $(kubectl -n legacy logs "$job" --tail=15 2>&1 | tr '\n' ' ' | cut -c1-800)"
 done
 for svc in shipment-webhook notification-service; do
   URL=$(gcloud run services describe "$svc" --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)' 2>/dev/null)
   [ -n "$URL" ] && note "cloudrun/$svc" "$URL" || bad "cloudrun/$svc" "not deployed"
 done
 DF=$(gcloud dataflow jobs list --project "$PROJECT_ID" --region "$REGION" --status=active --format='value(name,state)' 2>/dev/null | head -3 | tr '\n' ';')
-[ -n "$DF" ] && note "dataflow" "active: $DF" || bad "dataflow" "no active Dataflow job"
+if [ -n "$DF" ]; then note "dataflow" "active: $DF"; else
+  bad "dataflow" "no active Dataflow job"
+  ALLJOBS=$(gcloud dataflow jobs list --project "$PROJECT_ID" --region "$REGION" --format='value(id,name,state)' --limit 5 2>&1 | tr '\n' ';')
+  info "dataflow-diagnostics" "jobs: ${ALLJOBS:0:600}"
+  JID=$(gcloud dataflow jobs list --project "$PROJECT_ID" --region "$REGION" --format='value(id)' --limit 1 2>/dev/null)
+  if [ -n "$JID" ]; then
+    ERRS=$(gcloud logging read "resource.type=\"dataflow_step\" AND resource.labels.job_id=\"$JID\" AND severity>=ERROR" --project "$PROJECT_ID" --limit 6 --freshness=3h --format='value(jsonPayload.message,textPayload)' 2>&1 | tr '\n' ' ' | cut -c1-2500)
+    info "dataflow-errors" "${ERRS:-none in Cloud Logging}"
+    LAUNCH=$(gcloud logging read "resource.type=\"dataflow_step\" AND resource.labels.job_id=\"$JID\" AND (jsonPayload.message:\"Exception\" OR textPayload:\"Exception\")" --project "$PROJECT_ID" --limit 3 --freshness=3h --format='value(jsonPayload.message,textPayload)' 2>&1 | tr '\n' ' ' | cut -c1-2500)
+    info "dataflow-exceptions" "${LAUNCH:-none}"
+  fi
+fi
 
 # ---------- 1. migration phase: run both bridges ----------
 gcloud pubsub topics publish migration-control --project "$PROJECT_ID" --message='{"phase":"DUAL_RUN"}' --attribute=phase=DUAL_RUN >/dev/null \

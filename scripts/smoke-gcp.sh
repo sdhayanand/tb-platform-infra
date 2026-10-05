@@ -146,6 +146,17 @@ LOGS=$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.la
   --project "$PROJECT_ID" --limit 3 --freshness=30m --format='value(textPayload,jsonPayload.message)' 2>/dev/null | head -1)
 [ -n "$LOGS" ] && note "push-to-cloud-run" "notification-service: ${LOGS:0:300}" || bad "push-to-cloud-run" "no notification log for $ORDER_ID (push subscription / OIDC / invoker)"
 
+# ---------- 7b. diagnostics for the forward bridge ----------
+if [ "${BRIDGED:-0}" = "0" ] || ! [ "${BRIDGED:-0}" -ge 1 ] 2>/dev/null; then
+  info "jms-bridge-logs" "$(kubectl -n otd logs deploy/jms-to-pubsub-bridge --tail=25 2>&1 | grep -iE 'error|warn|exception|phase|bridged|publish|connect' | tail -8 | tr '\n' ' ' | cut -c1-2500)"
+  DLQR=$(gcloud pubsub subscriptions pull events-dlq-monitor --project "$PROJECT_ID" --limit 5 --format='value(message.attributes.dlqReason,message.attributes.dlqStage,message.attributes.originalTopic)' 2>&1 | tr '\n' ';' | cut -c1-1500)
+  info "dlq-sample" "${DLQR:-empty}"
+fi
+
+# ---------- 7c. compute quota picture ----------
+info "compute-vms" "$(gcloud compute instances list --project "$PROJECT_ID" --format='value(name,zone.basename(),machineType.basename(),status)' 2>&1 | tr '\n' ';' | cut -c1-1500)"
+info "cpu-quota" "$(gcloud compute project-info describe --project "$PROJECT_ID" --format=json 2>/dev/null | python3 -c "import sys,json; q=[x for x in json.load(sys.stdin).get('quotas',[]) if x['metric']=='CPUS_ALL_REGIONS']; print(q)" 2>&1 | cut -c1-300)"
+
 # ---------- 8. Pub/Sub health ----------
 DLQ=$(gcloud pubsub subscriptions pull events-dlq-monitor --project "$PROJECT_ID" --limit 10 --format='value(message.attributes.dlqReason)' 2>/dev/null | wc -l)
 info "dead-letter" "$DLQ message(s) visible in events-dlq-monitor"

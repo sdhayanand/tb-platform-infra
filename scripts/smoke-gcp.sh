@@ -19,9 +19,12 @@ REGION="${REGION:-us-central1}"
 GKE_LOCATION="${GKE_LOCATION:-us-east1}"
 FAILS=0
 
-note() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice title=$1::$2"; else printf "\033[32mPASS\033[0m %-28s %s\n" "$1" "$2"; fi; }
-bad()  { FAILS=$((FAILS+1)); if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error title=$1::$2"; else printf "\033[31mFAIL\033[0m %-28s %s\n" "$1" "$2"; fi; }
-info() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice title=$1::$2"; else printf "INFO %-28s %s\n" "$1" "$2"; fi; }
+# GitHub shows at most 10 notices per step, so every line also goes into the job summary table.
+summ() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '| %s | %s | %s |\n' "$1" "$2" "$(printf '%s' "$3" | tr '|\n' '/ ' | cut -c1-1500)" >> "$GITHUB_STEP_SUMMARY"; return 0; }
+[ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '## OTD platform smoke test\n\n| result | check | detail |\n|---|---|---|\n' >> "$GITHUB_STEP_SUMMARY"
+note() { summ "PASS" "$1" "$2"; if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice title=$1::$2"; else printf "\033[32mPASS\033[0m %-28s %s\n" "$1" "$2"; fi; }
+bad()  { FAILS=$((FAILS+1)); summ "FAIL" "$1" "$2"; if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error title=$1::$2"; else printf "\033[31mFAIL\033[0m %-28s %s\n" "$1" "$2"; fi; }
+info() { summ "info" "$1" "$2"; if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "$1: $2"; else printf "INFO %-28s %s\n" "$1" "$2"; fi; }
 json() { python3 -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
 # first column of the first row, or the BigQuery error text
 bqq()  { bq --project_id="$PROJECT_ID" query --nouse_legacy_sql --format=json --quiet "$1" 2>&1 \

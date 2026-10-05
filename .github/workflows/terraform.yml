@@ -48,6 +48,8 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOYER_SA }}
 
+      - uses: google-github-actions/setup-gcloud@v2
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
@@ -82,6 +84,20 @@ jobs:
         run: |
           set -o pipefail
           terraform apply -no-color -input=false -auto-approve -var-file=envs/dev.tfvars -var="project_id=${PROJECT_ID}" 2>&1 | tee -a ../tf.log | tail -n 200
+
+      - name: stop resources Terraform does not own (Dataflow jobs, Cloud Run)
+        if: inputs.action == 'destroy'
+        shell: bash
+        run: |
+          set +e
+          for j in $(gcloud dataflow jobs list --project "$PROJECT_ID" --region "$REGION" --status=active --format='value(id)'); do
+            gcloud dataflow jobs cancel "$j" --project "$PROJECT_ID" --region "$REGION"
+          done
+          for s in shipment-webhook notification-service; do
+            gcloud run services delete "$s" --region "$REGION" --project "$PROJECT_ID" --quiet
+          done
+          gcloud run jobs delete tb-reconciler --region "$REGION" --project "$PROJECT_ID" --quiet
+          exit 0
 
       - name: terraform destroy
         if: inputs.action == 'destroy'

@@ -59,7 +59,7 @@ poison message to see it dead-lettered.
 2. `bootstrap/github-config.sh` (repo variables/secrets on all six repos).
 3. Push to `main` here → `terraform` workflow applies the platform (≈10 min, GKE + Cloud SQL dominate).
 4. Run `deploy-gcp` in `tb-legacy-simulators`, `tb-integration-services`, `tb-tibco-to-pubsub-migration`, `tb-order-events-dataflow` (or `deploy-all` here).
-5. `scripts/smoke-gcp.sh` — creates an order and follows it into BigQuery, Cloud Run and the ERP queue.
+5. `scripts/smoke-gcp.sh` (or the `smoke-gcp` workflow) — creates an order and follows it into BigQuery, Cloud Run and the ERP queue. See [docs/LIVE-DEMO.md](docs/LIVE-DEMO.md).
 6. `scripts/destroy.sh` (or the `terraform` workflow with `action=destroy`) when done. See [docs/COST.md](docs/COST.md).
 
 Details: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).

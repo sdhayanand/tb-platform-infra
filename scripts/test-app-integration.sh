@@ -10,7 +10,25 @@ TOKEN="$(gcloud auth print-access-token)"
 FAILS=0
 ok()  { echo "PASS  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::notice title=app-integration::PASS $1"; return 0; }
 bad() { echo "FAIL  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=app-integration::FAIL ${1:0:900}"; FAILS=$((FAILS+1)); }
-py()  { python3 -c "$1"; }
+py()  { python3 -c "$@"; }
+explain() { # print why an execution failed: per-task state + error info (without the big payloads)
+  curl -sS -m 30 "${API}/executions?pageSize=20" -H "Authorization: Bearer ${TOKEN}" | python3 -c "
+import sys,json
+want=sys.argv[1]
+for e in json.load(sys.stdin).get('executions',[]):
+    if not e.get('name','').endswith(want): continue
+    for snap in (e.get('executionDetails') or {}).get('executionSnapshots',[]):
+        md=snap.get('executionSnapshotMetadata',{})
+        print('--', snap.get('checkpointTaskNumber'), md.get('taskLabel',''), md.get('task',''))
+        for t in snap.get('taskExecutionDetails',[]):
+            print('   task', t.get('taskNumber'), t.get('taskExecutionState'), json.dumps(t.get('taskAttemptStats',''))[:200])
+        for k,v in snap.get('params',{}).items():
+            if k in ('CloudPubSubMessage','shipmentEventJson','ExecutionTraceInfo'): continue
+            txt=json.dumps(v)
+            if 'rror' in k or 'Task_2' in k or k in ('orderUrl','requestHeaders','isException','status','opsTicket'):
+                print('   ', k, '=', txt[:700])
+" "$1"
+}
 
 echo "==> 1. create an order via ${ORDER_API_BASE}"
 ORDER=$(curl -sS -m 30 -X POST "$ORDER_API_BASE" -H 'Content-Type: application/json' -H "x-api-key: ${ORDER_API_KEY:-}" \
@@ -24,7 +42,7 @@ EVENT=$(printf '{"eventId":"it-%s","eventType":"SHIPMENT_UPDATED","orderId":"%s"
   "$(date +%s)" "$ORDER_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date +%s)")
 REQ=$(py "import json,sys; print(json.dumps({'triggerId':'api_trigger/${NAME}_API_1','inputParameters':{'shipmentEventJson':{'jsonValue':sys.argv[1]}}}))" "$EVENT")
 RESP=$(curl -sS -m 120 -X POST "${API}:execute" -H "Authorization: Bearer ${TOKEN}" -H 'Content-Type: application/json' -d "$REQ")
-echo "$RESP" | head -c 3000; echo
+echo "$RESP" | head -c 1500; echo
 TICKET_ORDER=$(echo "$RESP" | py "
 import sys,json
 d=json.load(sys.stdin); t=None
@@ -33,7 +51,12 @@ v=op.get('opsTicket')
 if isinstance(v,dict) and 'jsonValue' in v: v=v['jsonValue']
 if isinstance(v,str): v=json.loads(v)
 print((v or {}).get('order',{}).get('orderId',''))" 2>/dev/null)
-[ "$TICKET_ORDER" = "$ORDER_ID" ] && ok "API trigger -> REST via order API -> opsTicket for ${ORDER_ID}" || bad "API trigger: opsTicket missing/mismatch (got '${TICKET_ORDER}'): ${RESP:0:600}"
+if [ "$TICKET_ORDER" = "$ORDER_ID" ]; then ok "API trigger -> REST via order API -> opsTicket for ${ORDER_ID}"
+else
+  bad "API trigger: opsTicket missing/mismatch (got '${TICKET_ORDER}'): ${RESP:0:400}"
+  EXEC_ID=$(echo "$RESP" | py "import sys,json;print(json.load(sys.stdin).get('executionId',''))" 2>/dev/null)
+  [ -n "$EXEC_ID" ] && explain "$EXEC_ID"
+fi
 
 echo "==> 3. Pub/Sub trigger via the real carrier webhook"
 START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -62,6 +85,6 @@ done
 if [[ "$FOUND" == SUCCEEDED* ]]; then ok "Pub/Sub trigger: webhook -> shipments-v1 -> integration execution ${FOUND#* } SUCCEEDED"
 else
   bad "Pub/Sub trigger: no successful execution after webhook (${FOUND:-none})"
-  echo "$LIST" | head -c 4000; echo
+  [ -n "$FOUND" ] && explain "${FOUND#* }"
 fi
 exit "$FAILS"

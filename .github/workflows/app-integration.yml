@@ -1,0 +1,77 @@
+name: app-integration
+# Provision GCP Application Integration, publish tb-shipment-exception-to-ops and test both triggers.
+# Calls the Order API through Apigee when the Apigee proxy is live, otherwise the GKE backend directly.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: provision + publish before testing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  GKE_LOCATION: ${{ vars.GKE_LOCATION || 'us-east1' }}
+
+jobs:
+  app-integration:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'beta,gke-gcloud-auth-plugin,kubectl'
+
+      - name: choose the Order API endpoint (Apigee if live)
+        id: ep
+        run: |
+          set -uo pipefail
+          T=$(gcloud auth print-access-token)
+          NB=$(gcloud compute addresses describe apigee-northbound-ip --global --project "$PROJECT_ID" --format='value(address)' 2>/dev/null || true)
+          KEY=$(curl -sS -H "Authorization: Bearer $T" \
+            "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/developers/store-pos@tailoredbrands.example/apps/store-pos-app" 2>/dev/null \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['credentials'][0]['consumerKey'])" 2>/dev/null || true)
+          if [ -n "$NB" ] && [ -n "$KEY" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 "http://${NB}.nip.io/v1/orders/x")" = 401 ]; then
+            echo "::add-mask::$KEY"
+            echo "base=http://${NB}.nip.io/v1/orders" >> "$GITHUB_OUTPUT"; echo "key=$KEY" >> "$GITHUB_OUTPUT"
+            echo "::notice title=app-integration::Order API through Apigee http://${NB}.nip.io/v1/orders"
+          else
+            gcloud container clusters get-credentials tb-otd-autopilot --region "$GKE_LOCATION" --project "$PROJECT_ID" >/dev/null
+            IP=$(kubectl -n otd get svc order-intake-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo "base=http://${IP}/v1/orders" >> "$GITHUB_OUTPUT"; echo "key=" >> "$GITHUB_OUTPUT"
+            echo "::notice title=app-integration::Apigee not live yet - Order API direct http://${IP}/v1/orders"
+          fi
+
+      - name: provision + publish
+        if: inputs.publish
+        env:
+          ORDER_API_BASE: ${{ steps.ep.outputs.base }}
+          ORDER_API_KEY: ${{ steps.ep.outputs.key }}
+          OUT_DIR: ${{ runner.temp }}
+        run: bash scripts/app-integration.sh 2>&1 | tee "$RUNNER_TEMP/appint.log"; exit ${PIPESTATUS[0]}
+
+      - name: end-to-end test (API trigger + Pub/Sub trigger)
+        env:
+          ORDER_API_BASE: ${{ steps.ep.outputs.base }}
+          ORDER_API_KEY: ${{ steps.ep.outputs.key }}
+        run: bash scripts/test-app-integration.sh 2>&1 | tee "$RUNNER_TEMP/appint-test.log"; exit ${PIPESTATUS[0]}
+
+      - name: errors as annotations
+        if: failure()
+        run: |
+          for f in "$RUNNER_TEMP/appint.log" "$RUNNER_TEMP/appint-test.log"; do
+            [ -f "$f" ] || continue
+            grep -iE "fail|error|HTTP [45]|\"message\"" "$f" | head -n 5 | while IFS= read -r l; do echo "::error title=app-integration::${l:0:900}"; done
+          done
+          exit 0

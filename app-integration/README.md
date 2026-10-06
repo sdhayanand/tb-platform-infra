@@ -12,27 +12,28 @@ sensible split is:
 | Long tail of "when X happens, call Y and Z" with SaaS connectors (Salesforce, ServiceNow, SAP, Jira, email) | **Application Integration** (this folder) |
 | Orchestrating steps with retries/compensation | **Workflows** |
 
-`shipment-notification-integration.json` is an exported integration (import via the console:
-*Application Integration → Integrations → Upload/Import*, or
-`gcloud integrations versions upload --integration=tb-shipment-exception-to-ops --file=...` where supported):
+## The live integration: `tb-shipment-exception-to-ops`
 
 ```
-Pub/Sub trigger (shipments-v1, subscription shipments-app-integration)
-   └─ Data mapping: parse ShipmentEvent, pick status/orderId
-        └─ condition status == EXCEPTION
-             └─ REST task: GET /v1/orders/{orderId} through Apigee (x-api-key)
-                  └─ REST task: POST ops webhook → ticket with order + carrier context
+Cloud Pub/Sub trigger (shipments-v1) ─┐
+API trigger (tests / replays) ────────┴─▶ 1 JavaScript: parse ShipmentEvent (plain or base64 Pub/Sub data)
+                                            └─ [status == EXCEPTION] ─▶ 2 Call REST endpoint: GET /v1/orders/{id}
+                                                                          through Apigee (x-api-key)
+                                                                          └─▶ 3 JavaScript: build ops ticket (output opsTicket)
 ```
 
-The exact export schema evolves with the product; treat the file as a reference of the shape
-(triggers, `FieldMappingTask`, `GenericRestV2Task`, parameters) and re-save it from the editor
-after import.
-
-## Provisioning
-1. Enable `integrations.googleapis.com` and provision the region (`gcloud integrations ... ` or console).
-2. Create the subscription `shipments-app-integration` on `shipments-v1` (Terraform: add to `modules/pubsub`),
-   and a service account `tb-app-integration` with `roles/pubsub.subscriber` + `roles/integrations.integrationInvoker`.
-3. Import the JSON, set `apiKey` and `opsWebhookUrl`, publish.
+* `build_integration.py` generates the IntegrationVersion JSON; the task scripts are in `src/*.js`
+  so they are reviewed and unit-tested like code (the same JSON can be imported in the console).
+* `scripts/app-integration.sh` provisions the region (`clients:provision`), creates the trigger
+  service account `tb-app-integration` (Integration Invoker), gives the Application Integration
+  service agent Pub/Sub Editor (it creates the trigger's subscription on publish) and actAs on that SA,
+  then creates a version and publishes it.
+* `scripts/test-app-integration.sh` proves both triggers: `:execute` on the API trigger, and a real
+  signed UPS exception through the Cloud Run webhook → `shipments-v1` → Pub/Sub trigger.
+* Workflow: `.github/workflows/app-integration.yml` (manual). It routes the REST call through Apigee
+  when the proxy answers, otherwise straight to the GKE backend.
+* In production the last step would be a ServiceNow/Jira connector task, and the API key would come
+  from an Auth Config rather than a default value.
 
 ## What to say in the interview
 * "I keep the core order path in code because it needs ordering, idempotency and a database

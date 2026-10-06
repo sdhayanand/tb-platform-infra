@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Smoke test THROUGH Apigee: client -> external LB -> PSC -> Apigee proxy (policies) -> order-intake-api on GKE.
+# Smoke test THROUGH Apigee (APIGEE_SCHEME=http|https): client -> external LB -> PSC -> Apigee proxy (policies) -> order-intake-api on GKE.
 #   APIGEE_HOST=<ip>.nip.io KEY_FILE=.apigee-key scripts/smoke-apigee.sh
 # Prints one PASS/FAIL line per check (also as GitHub annotations when run in Actions). Never prints the key.
 set -uo pipefail
 HOST="${APIGEE_HOST:?set APIGEE_HOST (e.g. 34.1.2.3.nip.io)}"
 KEY="$(cat "${KEY_FILE:-.apigee-key}")"
-BASE="http://${HOST}/v1/orders"
+SCHEME="${APIGEE_SCHEME:-http}"
+BASE="${SCHEME}://${HOST}/v1/orders"
 FAILS=0
-ok()   { echo "PASS  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::notice title=apigee smoke::PASS $1"; return 0; }
-bad()  { echo "FAIL  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=apigee smoke::FAIL $1"; FAILS=$((FAILS+1)); }
+ok()   { set -- "[${SCHEME:-http}] $1"; echo "PASS  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::notice title=apigee smoke::PASS $1"; return 0; }
+bad()  { set -- "[${SCHEME:-http}] $1"; echo "FAIL  $1"; [ -n "${GITHUB_ACTIONS:-}" ] && echo "::error title=apigee smoke::FAIL $1"; FAILS=$((FAILS+1)); }
 call() { # call METHOD URL [curl args] -> $CODE, body in /tmp/apigee-smoke.json, headers in /tmp/apigee-smoke.h
   CODE="$(curl -sS -m 30 -o /tmp/apigee-smoke.json -D /tmp/apigee-smoke.h -w '%{http_code}' -X "$1" "$2" "${@:3}")" || CODE=000
 }

@@ -1,6 +1,6 @@
 name: app-integration
 # Provision GCP Application Integration, publish tb-shipment-exception-to-ops and test both triggers.
-# Calls the Order API through Apigee when the Apigee proxy is live, otherwise the GKE backend directly.
+# Calls the Order API through Apigee over HTTPS (Application Integration rejects plain-HTTP REST calls).
 on:
   workflow_dispatch:
     inputs:
@@ -33,25 +33,22 @@ jobs:
         with:
           install_components: 'beta,gke-gcloud-auth-plugin,kubectl'
 
-      - name: choose the Order API endpoint (Apigee if live)
+      - name: Order API endpoint = Apigee over HTTPS (the REST task refuses plain HTTP)
         id: ep
         run: |
           set -uo pipefail
           T=$(gcloud auth print-access-token)
-          NB=$(gcloud compute addresses describe apigee-northbound-ip --global --project "$PROJECT_ID" --format='value(address)' 2>/dev/null || true)
+          NB=$(gcloud compute addresses describe apigee-northbound-ip --global --project "$PROJECT_ID" --format='value(address)')
+          ST=$(gcloud compute ssl-certificates describe apigee-northbound-cert --global --project "$PROJECT_ID" --format='value(managed.status)' 2>/dev/null || true)
           KEY=$(curl -sS -H "Authorization: Bearer $T" \
-            "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/developers/store-pos@tailoredbrands.example/apps/store-pos-app" 2>/dev/null \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)['credentials'][0]['consumerKey'])" 2>/dev/null || true)
-          if [ -n "$NB" ] && [ -n "$KEY" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -m 10 "http://${NB}.nip.io/v1/orders/x")" = 401 ]; then
-            echo "::add-mask::$KEY"
-            echo "base=http://${NB}.nip.io/v1/orders" >> "$GITHUB_OUTPUT"; echo "key=$KEY" >> "$GITHUB_OUTPUT"
-            echo "::notice title=app-integration::Order API through Apigee http://${NB}.nip.io/v1/orders"
-          else
-            gcloud container clusters get-credentials tb-otd-autopilot --region "$GKE_LOCATION" --project "$PROJECT_ID" >/dev/null
-            IP=$(kubectl -n otd get svc order-intake-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            echo "base=http://${IP}/v1/orders" >> "$GITHUB_OUTPUT"; echo "key=" >> "$GITHUB_OUTPUT"
-            echo "::notice title=app-integration::Apigee not live yet - Order API direct http://${IP}/v1/orders"
+            "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/developers/store-pos@tailoredbrands.example/apps/store-pos-app" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['credentials'][0]['consumerKey'])")
+          echo "::add-mask::$KEY"
+          if [ "$ST" != ACTIVE ]; then
+            echo "::error title=app-integration::Apigee certificate for ${NB}.nip.io is ${ST:-missing}; rerun when ACTIVE"; exit 1
           fi
+          echo "base=https://${NB}.nip.io/v1/orders" >> "$GITHUB_OUTPUT"; echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "::notice title=app-integration::Order API through Apigee https://${NB}.nip.io/v1/orders"
 
       - name: provision + publish
         if: inputs.publish

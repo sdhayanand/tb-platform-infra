@@ -63,11 +63,21 @@ jobs:
           fi
           echo "::add-mask::$(cat "$KEY_FILE")"
 
-      - name: smoke test through Apigee
+      - name: smoke test through Apigee (HTTP)
         env:
           APIGEE_HOST: ${{ steps.ep.outputs.host }}
           KEY_FILE: ${{ runner.temp }}/apigee-key
         run: bash scripts/smoke-apigee.sh
+
+      - name: smoke test through Apigee (HTTPS, once the managed certificate is ACTIVE)
+        env:
+          APIGEE_HOST: ${{ steps.ep.outputs.host }}
+          APIGEE_SCHEME: https
+          KEY_FILE: ${{ runner.temp }}/apigee-key
+        run: |
+          ST=$(gcloud compute ssl-certificates describe apigee-northbound-cert --global --project "$PROJECT_ID" --format='value(managed.status)' 2>/dev/null)
+          if [ "$ST" != ACTIVE ]; then echo "::warning title=apigee::managed certificate is ${ST:-missing} (Google provisions it 15-60 min after DNS resolves); HTTPS check skipped"; exit 0; fi
+          bash scripts/smoke-apigee.sh
 
       - name: errors as annotations
         if: failure()

@@ -11,7 +11,8 @@
       <Server name="order-intake-api"/>
       <MaxFailures>3</MaxFailures>
     </LoadBalancer>
-    <Path>/v1/orders{proxy.pathsuffix}</Path>
+    <Path>/v1/orders</Path>
+    <!-- Apigee appends proxy.pathsuffix (e.g. /ORD-2026-000123) to this path itself -->
     <HealthMonitor>
       <IsEnabled>true</IsEnabled>
       <IntervalInSec>30</IntervalInSec>

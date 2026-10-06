@@ -85,8 +85,8 @@ resource "google_apigee_instance_attachment" "dev" {
 # ---------------------------------------------------------------------------------------------
 # Northbound (client -> Apigee) path. Apigee X runtime lives in a Google tenant project and is
 # only reachable privately, so we publish it with Private Service Connect:
-#   client -> global external Application LB (HTTP :80) -> PSC NEG -> Apigee service attachment
-# Demo-grade: plain HTTP on the frontend. Production: HTTPS with a Google-managed cert + Cloud Armor.
+#   client -> global external Application LB (:80 / :443) -> PSC NEG -> Apigee service attachment
+# HTTP :80 and HTTPS :443 (managed cert below). Production adds Cloud Armor and a real DNS name.
 # ---------------------------------------------------------------------------------------------
 resource "google_compute_subnetwork" "psc" {
   project       = var.project_id
@@ -141,6 +141,32 @@ resource "google_compute_global_forwarding_rule" "apigee" {
   target                = google_compute_target_http_proxy.apigee.id
   ip_address            = google_compute_global_address.northbound.address
   port_range            = "80"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+# HTTPS on the same IP with a Google-managed certificate for <ip>.nip.io. Required by callers that
+# refuse plain HTTP (Application Integration's REST task does), and what production would use anyway.
+resource "google_compute_managed_ssl_certificate" "apigee" {
+  project = var.project_id
+  name    = "apigee-northbound-cert"
+  managed {
+    domains = ["${google_compute_global_address.northbound.address}.nip.io"]
+  }
+}
+
+resource "google_compute_target_https_proxy" "apigee" {
+  project          = var.project_id
+  name             = "apigee-https-proxy"
+  url_map          = google_compute_url_map.apigee.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.apigee.id]
+}
+
+resource "google_compute_global_forwarding_rule" "apigee_https" {
+  project               = var.project_id
+  name                  = "apigee-https"
+  target                = google_compute_target_https_proxy.apigee.id
+  ip_address            = google_compute_global_address.northbound.address
+  port_range            = "443"
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
 

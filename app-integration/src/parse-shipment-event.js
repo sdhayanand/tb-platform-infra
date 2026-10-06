@@ -40,7 +40,9 @@ function executeScript(event) {
   event.setParameter("orderId", String(ev.orderId || ""));
   event.setParameter("status", status);
   event.setParameter("isException", status === "EXCEPTION");
-  event.setParameter("orderUrl", event.getParameter("orderApiBaseUrl") + "/" + ev.orderId);
+  var key = event.getParameter("orderApiKey");
+  event.setParameter("orderUrl", event.getParameter("orderApiBaseUrl") + "/" + encodeURIComponent(ev.orderId)
+      + (key ? "?apikey=" + encodeURIComponent(key) : ""));
   event.setParameter("requestHeaders", {
     "x-api-key": event.getParameter("orderApiKey"),
     "X-Correlation-Id": String(ev.correlationId || ev.eventId || "")

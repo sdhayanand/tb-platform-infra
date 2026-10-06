@@ -57,11 +57,10 @@ rest_task = {
     "parameters": {
         "url": {"key": "url", "value": s("$orderUrl$")},
         "httpMethod": {"key": "httpMethod", "value": s("GET")},
-        # Request headers = a JSON object of name -> value (what the editor's key/value rows export as).
-        # A "$var$" reference here is NOT expanded (first live run: 401), so the values are literal.
-        "additionalHeaders": {"key": "additionalHeaders",
-                              "value": {"jsonValue": json.dumps({"x-api-key": ORDER_API_KEY,
-                                                                 "X-Correlation-Id": "app-integration"})}},
+        # Header values in an imported version were not applied (two live runs: 401 at Apigee), so the
+        # key travels as ?apikey= (Apigee moves it into x-api-key and strips it before the backend).
+        # Production: an Auth Config of type API key on this task.
+        "additionalHeaders": {"key": "additionalHeaders"},
         "responseBody": {"key": "responseBody", "value": out("Task_2_responseBody")},
         "responseHeader": {"key": "responseHeader", "value": out("Task_2_responseHeader")},
         "responseStatus": {"key": "responseStatus", "value": out("Task_2_responseStatus")},

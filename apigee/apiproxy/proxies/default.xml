@@ -5,6 +5,10 @@
     <Request>
       <Step><Name>AM-Cors</Name></Step>
       <Step>
+        <Name>AM-ApiKeyFromQuery</Name>
+        <Condition>(request.queryparam.apikey != null) and (request.header.x-api-key = null)</Condition>
+      </Step>
+      <Step>
         <Name>VK-VerifyApiKey</Name>
         <Condition>request.verb != "OPTIONS"</Condition>
       </Step>

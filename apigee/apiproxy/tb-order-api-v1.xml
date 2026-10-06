@@ -4,6 +4,7 @@
   <Description>API-gateway facade for order-intake-api (GKE): API key, spike arrest, quota, JSON threat protection, OpenAPI validation, correlation id, CORS.</Description>
   <BasePaths>/v1/orders</BasePaths>
   <Policies>
+    <Policy>AM-ApiKeyFromQuery</Policy>
     <Policy>VK-VerifyApiKey</Policy>
     <Policy>SA-SpikeArrest</Policy>
     <Policy>Q-Quota</Policy>

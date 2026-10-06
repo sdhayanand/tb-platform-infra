@@ -48,5 +48,10 @@ if [ -n "$ORDER_ID" ]; then
   [ "$CODE" = 200 ] && ok "get order through Apigee -> 200 status=${STATUS} (outbox -> Pub/Sub -> inventory)" || bad "get order -> expected 200, got $CODE"
 fi
 
+if [ -n "${ORDER_ID:-}" ]; then
+  call GET "${BASE}/${ORDER_ID}?apikey=${KEY}"
+  [ "$CODE" = 200 ] && ok "API key as ?apikey= (callers that cannot set headers) -> 200" || bad "?apikey= -> expected 200, got $CODE"
+fi
+
 [ "$FAILS" = 0 ] && echo "==> all Apigee checks passed" || echo "==> ${FAILS} Apigee check(s) failed"
 exit "$FAILS"

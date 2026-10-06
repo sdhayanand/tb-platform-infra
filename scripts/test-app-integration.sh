@@ -37,6 +37,15 @@ ORDER_ID=$(echo "$ORDER" | py "import sys,json;print(json.load(sys.stdin).get('o
 [ -n "$ORDER_ID" ] && ok "order ${ORDER_ID} created" || { bad "order create: ${ORDER:0:300}"; exit 1; }
 sleep 5
 
+if [ -n "${ORDER_API_KEY:-}" ]; then
+  echo "==> waiting until Apigee accepts ?apikey= (proxy revision with AM-ApiKeyFromQuery)"
+  for i in $(seq 1 40); do
+    C=$(curl -s -o /dev/null -w '%{http_code}' -m 15 "${ORDER_API_BASE}/${ORDER_ID}?apikey=${ORDER_API_KEY}")
+    [ "$C" = 200 ] && break; echo "    HTTP $C"; sleep 15
+  done
+  [ "$C" = 200 ] && ok "Apigee accepts the key as ?apikey=" || bad "Apigee ?apikey= still HTTP $C"
+fi
+
 echo "==> 2. API trigger"
 EVENT=$(printf '{"eventId":"it-%s","eventType":"SHIPMENT_UPDATED","orderId":"%s","trackingNumber":"1ZAPPINT0001","carrier":"UPS","status":"EXCEPTION","statusTime":"%s","location":"Dublin, CA","correlationId":"appint-test-%s"}' \
   "$(date +%s)" "$ORDER_ID" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date +%s)")

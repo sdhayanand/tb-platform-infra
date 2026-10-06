@@ -8,6 +8,8 @@ Verified end to end by `smoke-gcp` on 2026-10-05 (run 37251718467, all checks gr
 | Order API (GKE, LoadBalancer) | `http://34.24.192.104/v1/orders` — Swagger UI `http://34.24.192.104/swagger-ui.html`, WSDL `http://34.24.192.104/ws/orders.wsdl` |
 | Carrier webhook (Cloud Run, public, HMAC) | `https://shipment-webhook-bo4wlklhma-uc.a.run.app/v1/carriers/UPS/events` |
 | Notification service (Cloud Run, private, Pub/Sub push + OIDC) | `https://notification-service-bo4wlklhma-uc.a.run.app` |
+| Apigee X (eval org) | `https://34.107.180.198.nip.io/v1/orders` (also http) — header `x-api-key` (or `?apikey=`); key: Apigee → Apps → store-pos-app |
+| Application Integration | `tb-shipment-exception-to-ops` (us-central1): Pub/Sub trigger on `shipments-v1`, API trigger; Console → Application Integration → Integrations → Executions |
 | GKE Autopilot | `tb-otd-autopilot`, **us-east1** (us-central1 had no Autopilot capacity on the day) — namespaces `otd`, `legacy` |
 | Cloud SQL | `tb-otd-pg` (Postgres 15), database `otd` |
 | BigQuery | dataset `otd`: `orders_raw` (BigQuery subscription), `order_events`, `order_lines`, `inventory_events`, `shipment_events`, `store_order_metrics`, `dead_letter` (Dataflow) |
@@ -38,6 +40,11 @@ gcloud pubsub topics publish migration-control --message='{"phase":"PUBSUB_PRIMA
 ## Bugs the live environment found (good interview stories)
 | Symptom | Root cause | Fix |
 |---|---|---|
+| Apigee instance create: *Internal error, code 13* | Transient provisioning failure on Google's side | Re-ran the Terraform apply; it tainted and recreated the instance |
+| GET through Apigee returned 404 | Target `Path` already had `{proxy.pathsuffix}`; Apigee appends it too → `/v1/orders/ID/ID` | Path `/v1/orders` only |
+| Application Integration: *HTTP call is not allowed* | Its REST task refuses plain HTTP | HTTPS on the Apigee LB with a Google-managed cert for `<ip>.nip.io` |
+| Integration got 401 from Apigee | Header values in the imported REST task were not sent | Apigee also accepts `?apikey=` (copied to `x-api-key`, stripped before the backend); production: an Auth Config |
+| Nightly JMeter 24% errors; POS CronJob ~25% rejected | Test data broke the canonical contract (shipTo/rental missing, SKUs like `34x32`, channel `ECOM`) | Fixed the data at the source + a contract test |
 | Every EMS order landed in `events-dlq` | OMS contract types `OrderDate` as `xs:date`; the bridge only parsed timestamps | Accept bare dates as start-of-day UTC + regression test. The DLQ + reconciler design caught it instead of silently losing orders. |
 | Flex Template launch failed: *"The result of template creation should not be used"* | `main()` called `waitUntilFinish()` | Block only on the DirectRunner |
 | Launcher: `NoClassDefFoundError: org/hamcrest/Matcher` | Beam registers `TestPipelineOptions` via ServiceLoader; Hamcrest was test-scoped | Hamcrest at runtime scope |

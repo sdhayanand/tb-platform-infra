@@ -32,8 +32,8 @@ Full design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Interview prep: [docs
 | Google Cloud Dataflow, Java + Apache Beam + Maven | `tb-order-events-dataflow` (streaming + batch, Flex Templates, TestPipeline tests) |
 | Cloud Run | `shipment-webhook`, `notification-service`, reconciler Cloud Run Job |
 | Cloud Scheduler / Composer | `terraform/modules/scheduler` (Flex Template launch via REST) + `tb-orchestration/composer` DAGs (+ optional Composer env) |
-| Apigee / API gateway | `apigee/` proxy bundle: API key, spike arrest, quota, JSON threat, OAS validation, correlation id |
-| GCP Application Integration | `app-integration/` exported integration (Pub/Sub trigger → mapping → REST) |
+| Apigee / API gateway | **Live** Apigee X eval org: proxy `tb-order-api-v1` (API key, spike arrest, quota, JSON threat, OAS validation, correlation id) behind PSC + global LB, HTTP and HTTPS; `apigee` workflow deploys + smoke-tests it |
+| GCP Application Integration | **Live** `tb-shipment-exception-to-ops`: Pub/Sub trigger on `shipments-v1` + API trigger → JavaScript → REST through Apigee (HTTPS) → ops ticket; `app-integration` workflow publishes + tests it |
 | Docker & Kubernetes | Every service: Dockerfile + Jib, kustomize base/overlays, GKE Autopilot, Workload Identity, HPA/PDB/NetworkPolicy |
 | XML/JSON, XSLT, XPath, XSD | `order-intake-api` SOAP adapter (XSD → JAXB, XSLT legacy→canonical), `legacy-oms-soap` contract-first XSD, migration `LegacyXmlMapper` |
 | SOAP + REST | SOAP endpoints (Spring WS) and REST (springdoc OpenAPI) in both directions |
@@ -85,4 +85,4 @@ docs/             ARCHITECTURE, DEPLOYMENT, COST, STUDY-GUIDE, RUNBOOK-OPERATION
 4. "Apigee holds policy, the services hold logic; the OpenAPI document is the contract shared by the gateway, the backend and the tests."
 5. "Everything deploys keylessly from GitHub Actions via Workload Identity Federation; Terraform owns infra, each service repo owns its rollout."
 6. "The migration is phase-driven and reversible at every step: bridges both ways, a reconciler with a BigQuery audit table, and a runbook with rollback per phase."
-7. "Cost is a feature flag: Composer and Apigee are off by default because Scheduler and the proxy bundle demonstrate the same skills for a fraction of the price."
+7. "Cost is a feature flag: Apigee runs as a free 60-day eval org; Composer stays off because Scheduler plus CI-tested DAGs show the same skills for a fraction of the price."

@@ -49,3 +49,8 @@ output "notification_service_url" {
 output "scheduler_job" {
   value = var.enable_scheduler ? module.scheduler[0].job_name : null
 }
+
+output "apigee_northbound_hostname" {
+  description = "Public hostname of the Apigee proxy (http://<ip>.nip.io/v1/orders) when enable_apigee = true"
+  value       = try(module.apigee[0].northbound_hostname, null)
+}

@@ -8,5 +8,5 @@ enable_gke       = true
 enable_cloudsql  = true
 enable_scheduler = true
 enable_composer  = false # Composer 2 small env ≈ $300+/month; DAGs are tested in CI instead
-enable_apigee    = false # Apigee X eval org takes ~1h to provision; enable when you want to demo it
+enable_apigee    = true  # Apigee X eval org (free 60 days); ~1h to provision. Exposed via PSC NEG + external LB
 cloudsql_tier    = "db-f1-micro"

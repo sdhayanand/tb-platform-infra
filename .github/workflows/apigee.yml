@@ -1,0 +1,77 @@
+name: apigee
+# Deploy the Apigee proxy (target server, bundle, product, developer, app) and smoke-test the API
+# THROUGH Apigee. Needs the eval org from terraform (enable_apigee = true). Manual dispatch only.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: deploy the proxy before testing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GKE_LOCATION: ${{ vars.GKE_LOCATION || 'us-east1' }}
+
+jobs:
+  apigee:
+    if: vars.GCP_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: 'gke-gcloud-auth-plugin,kubectl'
+
+      - name: discover endpoints
+        id: ep
+        run: |
+          set -euo pipefail
+          gcloud container clusters get-credentials tb-otd-autopilot --region "$GKE_LOCATION" --project "$PROJECT_ID"
+          BACKEND=$(kubectl -n otd get svc order-intake-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          NB=$(gcloud compute addresses describe apigee-northbound-ip --global --project "$PROJECT_ID" --format='value(address)')
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
+          echo "host=${NB}.nip.io" >> "$GITHUB_OUTPUT"
+          echo "::notice title=apigee::proxy http://${NB}.nip.io/v1/orders -> backend http://${BACKEND}/v1/orders"
+
+      - name: deploy proxy
+        if: inputs.deploy
+        env:
+          APIGEE_ORG: ${{ vars.GCP_PROJECT_ID }}
+          BACKEND_HOST: ${{ steps.ep.outputs.backend }}
+          KEY_FILE: ${{ runner.temp }}/apigee-key
+        run: bash scripts/deploy-apigee.sh 2>&1 | tee "$RUNNER_TEMP/apigee.log"
+
+      - name: fetch API key (masked)
+        env:
+          KEY_FILE: ${{ runner.temp }}/apigee-key
+        run: |
+          set -euo pipefail
+          if [ ! -s "$KEY_FILE" ]; then
+            curl -sS -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+              "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/developers/store-pos@tailoredbrands.example/apps/store-pos-app" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)['credentials'][0]['consumerKey'])" > "$KEY_FILE"
+          fi
+          echo "::add-mask::$(cat "$KEY_FILE")"
+
+      - name: smoke test through Apigee
+        env:
+          APIGEE_HOST: ${{ steps.ep.outputs.host }}
+          KEY_FILE: ${{ runner.temp }}/apigee-key
+        run: bash scripts/smoke-apigee.sh
+
+      - name: errors as annotations
+        if: failure()
+        run: |
+          f="$RUNNER_TEMP/apigee.log"; [ -f "$f" ] || exit 0
+          grep -iE "failed|error|HTTP [45]" "$f" | head -n 10 | while IFS= read -r l; do echo "::error title=apigee deploy::${l:0:900}"; done
+          exit 0
